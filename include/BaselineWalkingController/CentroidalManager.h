@@ -120,7 +120,7 @@ public:
   /** \brief Set anchor frame. */
   void setAnchorFrame();
 
-protected:
+public:
   /** \brief Const accessor to the controller. */
   inline const BaselineWalkingController & ctl() const
   {
@@ -165,7 +165,7 @@ protected:
   */
   virtual Eigen::Vector3d calcPlannedComAccel() const;
 
-protected:
+public:
   //! Pointer to controller
   BaselineWalkingController * ctlPtr_ = nullptr;
 

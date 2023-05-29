@@ -376,7 +376,7 @@ protected:
   */
   bool detectTouchDown() const;
 
-protected:
+public:
   //! Configuration
   Configuration config_;
 

@@ -17,6 +17,7 @@
   <depend>trajectory_collection</depend>
   <depend>force_control_collection</depend>
   <depend>centroidal_control_collection</depend>
+  <depend>variable_stiffness</depend>
 
   <build_depend>eigen</build_depend>
 

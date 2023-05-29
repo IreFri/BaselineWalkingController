@@ -93,6 +93,11 @@ public:
   */
   virtual void update(double t) override;
 
+  /** \brief Update the internal state of the swing trajectory.
+      \param pitch pitch angle
+  */
+  void updatePitch(double pitch);
+
   /** \brief Calculate the pose of the swing trajectory at a specified time.
       \param t time
   */
