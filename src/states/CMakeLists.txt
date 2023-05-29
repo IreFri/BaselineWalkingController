@@ -10,6 +10,13 @@ add_fsm_state(GuiWalkState GuiWalkState.cpp)
 target_link_libraries(GuiWalkState PUBLIC
   ${CONTROLLER_NAME})
 
+message(STATUS "Got STATES Qhull ${Qhull_VERSION}")
+
+add_fsm_state(SoftFootState SoftFootState.cpp)
+
+target_link_libraries(SoftFootState PUBLIC
+${CONTROLLER_NAME} mc_mujoco::devices qhullcpp qhull_r)
+
 add_fsm_state(TeleopState TeleopState.cpp)
 target_link_libraries(TeleopState PUBLIC
   ${CONTROLLER_NAME})

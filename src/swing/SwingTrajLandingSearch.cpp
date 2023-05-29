@@ -75,30 +75,47 @@ SwingTrajLandingSearch::SwingTrajLandingSearch(const sva::PTransformd & startPos
 
 void SwingTrajLandingSearch::update(double t)
 {
-  if(finalizeEndPose_)
+  // if(finalizeEndPose_)
+  // {
+  //   return;
+  // }
+
+  // double preApproachTime = std::next(waypointPoseList_.rbegin(), 2)->first;
+  // if(t >= preApproachTime)
+  // {
+  //   finalizeEndPose_ = true;
+
+  //   // \todo Determine landing pose based on measurements
+  //   sva::PTransformd newEndPose;
+  //   {
+  //     Eigen::Vector3d posOffset = 0.05 * Eigen::Vector3d::Random();
+  //     posOffset.z() = 0.0;
+  //     Eigen::Matrix3d rotOffset = mc_rbdyn::rpyToMat(mc_rtc::constants::toRad(5.0) * Eigen::Vector3d::Random());
+  //     newEndPose = sva::PTransformd(rotOffset, posOffset) * endPose_;
+  //   }
+
+  //   endPose_ = newEndPose;
+  //   std::next(waypointPoseList_.rbegin())->second = sva::PTransformd(config_.approachOffset) * endPose_;
+  //   waypointPoseList_.rbegin()->second = endPose_;
+  //   poseFunc_ = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>(waypointPoseList_);
+  // }
+}
+
+void SwingTrajLandingSearch::updatePitch(double pitch)
+{
+  // Compute current targeted foot angle
+  double current_pitch = mc_rbdyn::rpyFromMat(endPose_.rotation())[1];
+  // \todo Determine landing pose based on measurements
+  sva::PTransformd newEndPose;
   {
-    return;
+    Eigen::Matrix3d rotOffset = mc_rbdyn::rpyToMat(Eigen::Vector3d(0., pitch - current_pitch, 0.));
+    newEndPose = sva::PTransformd(rotOffset) * endPose_;
   }
 
-  double preApproachTime = std::next(waypointPoseList_.rbegin(), 2)->first;
-  if(t >= preApproachTime)
-  {
-    finalizeEndPose_ = true;
-
-    // \todo Determine landing pose based on measurements
-    sva::PTransformd newEndPose;
-    {
-      Eigen::Vector3d posOffset = 0.05 * Eigen::Vector3d::Random();
-      posOffset.z() = 0.0;
-      Eigen::Matrix3d rotOffset = mc_rbdyn::rpyToMat(mc_rtc::constants::toRad(5.0) * Eigen::Vector3d::Random());
-      newEndPose = sva::PTransformd(rotOffset, posOffset) * endPose_;
-    }
-
-    endPose_ = newEndPose;
-    std::next(waypointPoseList_.rbegin())->second = sva::PTransformd(config_.approachOffset) * endPose_;
-    waypointPoseList_.rbegin()->second = endPose_;
-    poseFunc_ = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>(waypointPoseList_);
-  }
+  endPose_ = newEndPose;
+  std::next(waypointPoseList_.rbegin())->second = sva::PTransformd(config_.approachOffset) * endPose_;
+  waypointPoseList_.rbegin()->second = endPose_;
+  poseFunc_ = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>(waypointPoseList_);
 }
 
 sva::PTransformd SwingTrajLandingSearch::pose(double t) const

@@ -14,6 +14,7 @@ option(INSTALL_DOCUMENTATION "Generate and install the documentation" OFF)
 include(cmake/base.cmake)
 project(baseline_walking_controller LANGUAGES CXX)
 
+add_project_dependency(Qhull 8.1 REQUIRED)
 # mc_rtc
 add_project_dependency(mc_rtc REQUIRED)
 if(NOT TARGET mc_rtc::mc_rtc_ros)
@@ -28,12 +29,15 @@ if(DEFINED CATKIN_DEVEL_PREFIX)
     trajectory_collection
     force_control_collection
     centroidal_control_collection
+    variable_stiffness
   )
 
   # Eigen
   find_package(Eigen3 REQUIRED)
   include_directories(${EIGEN3_INCLUDE_DIR})
-
+  
+  find_package(mc_mujoco REQUIRED)
+  
   catkin_package(
     CATKIN_DEPENDS
     roscpp
@@ -41,6 +45,7 @@ if(DEFINED CATKIN_DEVEL_PREFIX)
     trajectory_collection
     force_control_collection
     centroidal_control_collection
+    variable_stiffness
     DEPENDS EIGEN3
     INCLUDE_DIRS include
     LIBRARIES BaselineWalkingController
@@ -65,6 +70,7 @@ endif()
 configure_file(etc/BaselineWalkingController.in.yaml "${CONFIG_OUT}" @ONLY)
 install(FILES ${CONFIG_OUT} DESTINATION ${MC_RTC_LIBDIR}/mc_controller/etc/)
 
+# add_subdirectory(3rd-party/qhull)
 add_subdirectory(src)
 
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/BaselineWalkingController DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h")
