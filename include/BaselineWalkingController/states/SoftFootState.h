@@ -34,9 +34,32 @@ protected:
 
   void computeSegmentConvexHull(mc_control::fsm::Controller & ctl, const Foot & current_moving_foot);
 
+  std::vector<Eigen::Vector3d> computeConvexHull(const std::vector<Eigen::Vector3d>& data);
+
+  void computeFootLandingPosition(const Foot & current_moving_foot, const Eigen::Vector3d & landing);
+
   void computeFootLandingAngle(const Foot & current_moving_foot, const Eigen::Vector3d & landing);
 
   void updateFootSwingPose(mc_control::fsm::Controller & ctl, const Foot & current_moving_foot, const sva::PTransformd & X_0_landing);
+
+  Foot getCurrentMovingFoot(mc_control::fsm::Controller & ctl) const
+  {
+    // Cast ctl to BaselineWalkingController
+    auto & ctrl = static_cast<BWC::BaselineWalkingController&>(ctl);
+
+    Foot current_moving_foot; 
+    if(ctrl.footManager_->supportPhase() == BWC::SupportPhase::LeftSupport) // This is the name "LeftFootCenter" or "RightFootCenter"
+    {
+      current_moving_foot = Foot::Right;
+    }
+    else
+    {
+      current_moving_foot = Foot::Left;
+    }
+    return current_moving_foot;
+  }
+
+  bool evaluateTheta(double theta, double direction, const Eigen::Vector3d& pos, const std::vector<Eigen::Vector3d>& ground);
 
 protected:
   // Used to compute the cost to understand which is the best stiffness
@@ -51,19 +74,20 @@ protected:
 
   double cost_ = 0.0;
   double PhalangesStiffness_ = 0.0;
+  double extra_to_compute_best_position_ = 0.07;
 
   // FootData contains data used to estimate the ground profile
   struct FootData
   {
     double range;
     std::vector<Eigen::Vector3d> ground;
+    std::vector<std::array<double, 2>> phalanxes;
     std::vector<double> altitude;
-    double profile;
-    double profileFiltered;
     double k;
     double angle;
-    bool areComputationDone;
-    bool needReset;
+    double position_offset;
+    bool need_reset;
+    bool computation_done;
   };
   std::unordered_map<Foot, FootData> foot_data_;
   
@@ -71,6 +95,7 @@ protected:
   struct GroundSegment
   {
     std::vector<Eigen::Vector3d> raw; // means all the data
+    std::vector<Eigen::Vector3d> filtered;
     std::vector<Eigen::Vector3d> convex;
   };
   std::unordered_map<Foot, GroundSegment> ground_segment_; 
@@ -90,7 +115,10 @@ protected:
     {Foot::Right, "RightFootCenter"}
   };
 
+  // TODO: Ugly hardcoded value
   double foot_length_ = 0.27742;
+  size_t nr_phalanxes_ = 10;
+  double phalanx_length_ = 0.27742 / static_cast<double>(nr_phalanxes_);
 
   // Reset data
   void reset(mc_control::fsm::Controller & ctl, const Foot & foot);
