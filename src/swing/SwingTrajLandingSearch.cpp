@@ -118,6 +118,16 @@ void SwingTrajLandingSearch::updatePitch(double pitch)
   poseFunc_ = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>(waypointPoseList_);
 }
 
+void SwingTrajLandingSearch::updatePosX(double x_offset)
+{
+  const sva::PTransformd newEndPose = sva::PTransformd(Eigen::Vector3d(x_offset, 0., 0.)) * endPose_;
+  endPose_ = newEndPose;
+  
+  std::next(waypointPoseList_.rbegin())->second = sva::PTransformd(config_.approachOffset) * endPose_;
+  waypointPoseList_.rbegin()->second = endPose_;
+  poseFunc_ = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>(waypointPoseList_);
+}
+
 sva::PTransformd SwingTrajLandingSearch::pose(double t) const
 {
   if(touchDownTime_ > 0 && t >= touchDownTime_)
