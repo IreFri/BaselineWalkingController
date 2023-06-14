@@ -412,6 +412,10 @@ robots:
       doubleSupportRatio: 0.2 # []
       zmpOffset: [0, -0.02, 0] # (positive for x-forward, y-outside, z-upward) [m]
       defaultSwingTrajType: LandingSearch
+      overwriteLandingPose: false
+      stopSwingTrajForTouchDownFoot: false
+      keepPoseForTouchDownFoot: false
+      enableWrenchDistForTouchDownFoot: false
       touchDownForceZ: 200 # [N]
       impedanceGains:
         SingleSupport:

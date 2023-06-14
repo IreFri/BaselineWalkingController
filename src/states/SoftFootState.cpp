@@ -1168,6 +1168,9 @@ void SoftFootState::reset(mc_control::fsm::Controller & ctl, const Foot & foot)
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_angle");
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_min_max_phalanxes_angle");
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_position_offset");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_phalanxes_x");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_phalanxes_y");
+
 
 
   // Reset GUI
