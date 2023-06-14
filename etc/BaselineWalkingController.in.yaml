@@ -33,6 +33,8 @@ collisions:
 # Initial set of contacts
 contacts: []
 
+with_variable_stiffness: false
+
 # Implement some additional text states
 states:
   BWC::Initial_:
@@ -50,6 +52,9 @@ states:
 
   BWC::SoftFoot_:
     base: BWC::SoftFoot
+    with_ankle_rotation: true
+    with_foot_adjustment: true
+    nr_phalanx: 10
     
   BWC::Main_:
     base: Parallel
@@ -447,6 +452,80 @@ OverwriteConfigList:
       dcmGainP: 2.0 # It must be greater than 1 to be stable
       comZGainP: 20000.0
       refComZ: 0.78 # [m]
+      method: PreviewControlZmp
+      horizonDuration: 2.0 # [sec]
+      horizonDt: 0.002 # [sec]
+  
+  hrp4cr:
+    PostureTask:
+      jointWeights:
+        CHEST_P: 50
+        CHEST_R: 50
+        CHEST_Y: 50
+
+    CoMTask:
+      activeJoints: [
+      "Root",
+      "L_HIP_Y", "L_HIP_R", "L_HIP_P", "L_KNEE_P", "L_ANKLE_P", "L_ANKLE_R",
+      "R_HIP_Y", "R_HIP_R", "R_HIP_P", "R_KNEE_P", "R_ANKLE_P", "R_ANKLE_R"]
+
+    BaseOrientationTask:
+      frame: CHEST_Y_LINK
+
+    FootManager:
+      midToFootTranss:
+        Left:
+          translation: [0, 0.080, 0] # [m]
+        Right:
+          translation: [0, -0.080, 0] # [m]
+      footstepDuration: 1.6 # [sec]
+      doubleSupportRatio: 0.2 # []
+      zmpOffset: [0, -0.02, 0] # (positive for x-forward, y-outside, z-upward) [m]
+      defaultSwingTrajType: LandingSearch
+      touchDownForceZ: 200 # [N]
+      impedanceGains:
+        SingleSupport:
+          damper:
+            linear: [300, 300, 300]
+            angular: [40, 40, 100]
+          spring:
+            linear: [2250, 2250, 2250]
+            angular: [0, 0, 2000]
+          wrench:
+            linear: [0, 0, 0]
+            angular: [1, 1, 0]
+        DoubleSupport:
+          damper:
+            linear: [300, 300, 2e3]
+            angular: [40, 40, 100]
+          spring:
+            linear: [2250, 2250, 0]
+            angular: [0, 0, 2000]
+          wrench:
+            linear: [0, 0, 1]
+            angular: [1, 1, 0]
+        Swing:
+          damper:
+            linear: [300, 300, 300]
+            angular: [40, 40, 40]
+          spring:
+            linear: [2250, 2250, 2250]
+            angular: [400, 400, 400]
+          wrench:
+            linear: [0, 0, 0]
+            angular: [0, 0, 0]
+      SwingTraj:
+        LandingSearch:
+          withdrawDurationRatio: 0.25
+          withdrawOffset: [0, 0, 0.04] # [m]
+          preApproachDurationRatio: 0.05
+          approachDurationRatio: 0.20
+          approachOffset: [0, 0, 0.04] # [m]
+
+    CentroidalManager:
+      dcmGainP: 2.0 # It must be greater than 1 to be stable
+      comZGainP: 20000.0
+      refComZ: 0.82 # [m]
       method: PreviewControlZmp
       horizonDuration: 2.0 # [sec]
       horizonDt: 0.002 # [sec]
