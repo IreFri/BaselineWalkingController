@@ -21,6 +21,8 @@
 #include "libqhullcpp/QhullVertexSet.h"
 #include "libqhullcpp/QhullPoint.h"
 
+#include <boost/numeric/odeint.hpp>
+
 namespace
 {
 
@@ -59,9 +61,28 @@ void SoftFootState::start(mc_control::fsm::Controller & _ctl)
 {
   State::start(_ctl);
 
+  with_variable_stiffness_ = _ctl.config()("with_variable_stiffness", false);
+  with_ankle_rotation_ = config_("with_ankle_rotation", false);
+  with_foot_adjustment_ = config_("with_foot_adjustment", false);
+
+  nr_phalanxes_ = config_("nr_phalanx", 10);
+  phalanx_length_ = 0.27742 / static_cast<double>(nr_phalanxes_);
+
+  // Display configuration
+  mc_rtc::log::info("nr_phalanxes is set to {}", nr_phalanxes_);
+  mc_rtc::log::info("phalanx_length is set to {}", phalanx_length_);
+  mc_rtc::log::info("with_variable_stiffness is set to {}", with_variable_stiffness_);
+  mc_rtc::log::info("with_ankle_rotation is set to {}", with_ankle_rotation_);
+  mc_rtc::log::info("with_foot_adjustment is set to {}", with_foot_adjustment_);
+
   // Create client
   client_ = mc_rtc::ROSBridge::get_node_handle()->serviceClient<variable_stiffness::connectionFile>("connectionFile");
 
+  if(nr_remaining_footstep_ == 0.)
+  {
+    nr_footstep_ = 0.;
+  }
+  
   // Initialize map
   foot_data_[Foot::Left] = FootData{};
   foot_data_[Foot::Right] = FootData{};
@@ -69,10 +90,14 @@ void SoftFootState::start(mc_control::fsm::Controller & _ctl)
   _ctl.gui()->addElement({"SoftFoot"}, mc_rtc::gui::Label("cost", [this]() { return this->cost_; }));
   _ctl.logger().addLogEntry("cost", [this]() { return cost_; });
 
+  _ctl.gui()->addElement({"SoftFoot"}, mc_rtc::gui::Label("nr_remaining_footstep", [this]() { return this->nr_remaining_footstep_; }));
+  _ctl.logger().addLogEntry("nr_remaining_footstep", [this]() { return nr_remaining_footstep_; });
+
+  _ctl.gui()->addElement({"SoftFoot"}, mc_rtc::gui::Label("nr_footstep", [this]() { return this->nr_footstep_; }));
+  _ctl.logger().addLogEntry("nr_footstep", [this]() { return nr_footstep_; });
+
   _ctl.gui()->addElement({"SoftFoot"}, mc_rtc::gui::Label("PhalangesStiffness", [this]() { return this->PhalangesStiffness_; }));
   _ctl.logger().addLogEntry("PhalangesStiffness", [this]() { return PhalangesStiffness_; });
-
-
 
   _ctl.gui()->addXYPlot(
     "SoftFoot",
@@ -154,7 +179,7 @@ bool SoftFootState::run(mc_control::fsm::Controller & ctl)
   if(ctrl.footManager_->supportPhase() == BWC::SupportPhase::DoubleSupport)
   {
     foot_data_[Foot::Right].need_reset = true;
-    foot_data_[Foot::Left].need_reset = true; 
+    foot_data_[Foot::Left].need_reset = true;
     return false;
   }
   
@@ -167,13 +192,60 @@ bool SoftFootState::run(mc_control::fsm::Controller & ctl)
     const std::string name = foot == Foot::Left ? "left" : "right";
     if(foot_data_[current_moving_foot].need_reset)
     {
+      ++ nr_footstep_;
       reset(ctl, current_moving_foot);
     }
     else if (!ctl.gui()->hasElement({"SoftFoot"}, name + "_point_ground"))
     {
       // Handle logger and gui
       ctl.logger().addLogEntry("MyMeasures_" + name + "_ground", [this, foot]() { return foot_data_[foot].ground.back();} );
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_filtered_x", [this, foot]()
+        {
+          std::vector<double> d;
+          std::transform(ground_segment_[foot].filtered.begin(), ground_segment_[foot].filtered.end(), std::back_inserter(d),
+            [](const Eigen::Vector3d & v) { return v.x(); }); 
+          return d;
+        });
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_filtered_y", [this, foot]()
+        {
+          std::vector<double> d;
+          std::transform(ground_segment_[foot].filtered.begin(), ground_segment_[foot].filtered.end(), std::back_inserter(d),
+            [](const Eigen::Vector3d & v) { return v.y(); }); 
+          return d;
+        });
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_convex_x", [this, foot]()
+        {
+          std::vector<double> d;
+          std::transform(ground_segment_[foot].convex.begin(), ground_segment_[foot].convex.end(), std::back_inserter(d),
+            [](const Eigen::Vector3d & v) { return v.x(); }); 
+          return d;
+        });
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_convex_y", [this, foot]()
+        {
+          std::vector<double> d;
+          std::transform(ground_segment_[foot].convex.begin(), ground_segment_[foot].convex.end(), std::back_inserter(d),
+            [](const Eigen::Vector3d & v) { return v.y(); }); 
+          return d;
+        });
       ctl.logger().addLogEntry("MyMeasures_" + name + "_range", [this, foot]() { return foot_data_[foot].range;} );
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_k", [this, foot]() { return foot_data_[foot].k;} );
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_angle", [this, foot]() { return foot_data_[foot].angle;} );
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_min_max_phalanxes_angle", [this, foot]() { return foot_data_[foot].min_max_phalanxes_angle;} );
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_position_offset", [this, foot]() { return foot_data_[foot].position_offset;} );
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_phalanxes_x", [this, foot]()
+        {
+          std::vector<double> d;
+          std::transform(foot_data_[foot].phalanxes.begin(), foot_data_[foot].phalanxes.end(), std::back_inserter(d),
+            [](const std::array<double, 2> & v) { return v[0]; }); 
+          return d;
+        });
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_phalanxes_y", [this, foot]()
+        {
+          std::vector<double> d;
+          std::transform(foot_data_[foot].phalanxes.begin(), foot_data_[foot].phalanxes.end(), std::back_inserter(d),
+            [](const std::array<double, 2> & v) { return v[1]; }); 
+          return d;
+        });
 
       ctl.gui()->addElement({"SoftFoot"},
         mc_rtc::gui::Point3D(name + "_point_ground", {mc_rtc::gui::Color::Green}, [this, foot](){ return foot_data_[foot].ground.back(); }),
@@ -203,15 +275,27 @@ bool SoftFootState::run(mc_control::fsm::Controller & ctl)
       // Compute the altitude profile
       extractAltitudeProfileFromGroundSegment(current_moving_foot);
       // call the server and update the variable stiffness
-      updateVariableStiffness(ctl, current_moving_foot);
+      if(with_variable_stiffness_)
+      {
+        updateVariableStiffness(ctl, current_moving_foot);
+      }
       // Compute convex hull of the segment -> right now it does not work 
       computeSegmentConvexHull(ctl, current_moving_foot);
       // Find best landing position
-      computeFootLandingPosition(current_moving_foot, X_0_landing.translation());
-      // Update landing pose
-      X_0_landing = sva::PTransformd(Eigen::Vector3d(foot_data_[current_moving_foot].position_offset, 0., 0.)) * X_0_landing;
-      // Now with the convex hull we can compute the angle
-      computeFootLandingAngle(current_moving_foot, X_0_landing.translation());
+      if(with_foot_adjustment_)
+      {
+        // Compute min/max phalanxes angle depending of stiffness 
+        computeMinMaxAngle(current_moving_foot);
+        // Compute the landing position
+        computeFootLandingPosition(current_moving_foot, X_0_landing.translation());
+        // Update landing pose
+        X_0_landing = sva::PTransformd(Eigen::Vector3d(foot_data_[current_moving_foot].position_offset, 0., 0.)) * X_0_landing;
+      }
+      if(with_ankle_rotation_)
+      {
+        // Now with the convex hull we can compute the angle
+        computeFootLandingAngle(current_moving_foot, X_0_landing.translation());
+      }
       // Update targeted pose
       updateFootSwingPose(ctl, current_moving_foot, X_0_landing);
     }
@@ -283,12 +367,13 @@ void SoftFootState::calculateCost(mc_control::fsm::Controller & ctl)
   // Footstep
   {
     // Current number of steps to do
-    footstep_error_ =  ctrl.footManager_->footstepQueue().size() ;
-    footstep = lambda_footstep_ * footstep_error_;
+    nr_remaining_footstep_ =  ctrl.footManager_->footstepQueue().size() ;
+    footstep = lambda_footstep_ * nr_remaining_footstep_;
   } 
   
   cost_ = - footstep - zmp - CoM;
   //mc_rtc::log::success("Foot_Target_Pose : {}, Foot_Robot_Pose : {}, error_distance : {}", Foot_Target_Pose.translation().head<2>(), Foot_Robot_Pose.translation().head<2>(), error_distance);
+  // mc_rtc::log::info("footstep {}", footstep);
 }
 
 void SoftFootState::estimateGround(mc_control::fsm::Controller & ctl, const Foot & current_moving_foot)
@@ -411,6 +496,7 @@ void SoftFootState::updateVariableStiffness(mc_control::fsm::Controller & ctl, c
     // Reset stifness for both feet gains
     postureTask->jointGains(ctl.solver(), {tasks::qp::JointGains("R_VARSTIFF", 350), tasks::qp::JointGains("L_VARSTIFF", 350)});
     // Set computed stiffness for current moving foot
+    PhalangesStiffness_ = foot_data_[current_moving_foot].k;
     postureTask->target({{variable_stiffness_jointname_[current_moving_foot], std::vector<double>{stiffnessToAngle(foot_data_[current_moving_foot].k)}}});
   }
   else
@@ -455,7 +541,7 @@ std::vector<Eigen::Vector3d> SoftFootState::computeConvexHull(const std::vector<
   // Build the input for qhull
   std::vector<double> points_in;
   double min = std::numeric_limits<double>::max();
-  double max = std::numeric_limits<double>::min();
+  double max = std::numeric_limits<double>::lowest();
   // Skip some points
   for(size_t i = 0; i < data.size(); i += 2)
   {
@@ -487,8 +573,8 @@ std::vector<Eigen::Vector3d> SoftFootState::computeConvexHull(const std::vector<
       // Select only the upper part of the convex hull
       size_t idx_min_x = std::numeric_limits<size_t>::max();
       double min_x = std::numeric_limits<double>::max();
-      size_t idx_max_x = std::numeric_limits<size_t>::min();
-      double max_x = std::numeric_limits<double>::min();
+      size_t idx_max_x = std::numeric_limits<size_t>::lowest();
+      double max_x = std::numeric_limits<double>::lowest();
       for(size_t i = 0; i < convex_hull.size(); ++i)
       {
         if(convex_hull[i].x() < min_x)
@@ -505,7 +591,7 @@ std::vector<Eigen::Vector3d> SoftFootState::computeConvexHull(const std::vector<
       }
       //
       std::vector<Eigen::Vector2d> selected_part_0;
-      double max_part_0 = std::numeric_limits<double>::min();
+      double max_part_0 = std::numeric_limits<double>::lowest();
       for(size_t i = idx_min_x; i <= idx_max_x; ++i)
       {
         selected_part_0.push_back(convex_hull[i]);
@@ -513,7 +599,7 @@ std::vector<Eigen::Vector3d> SoftFootState::computeConvexHull(const std::vector<
       }
       //
       std::vector<Eigen::Vector2d> selected_part_1;
-      double max_part_1 = std::numeric_limits<double>::min();
+      double max_part_1 = std::numeric_limits<double>::lowest();
       int idx = idx_max_x;
       while (idx != idx_min_x)
       {
@@ -567,6 +653,49 @@ std::vector<Eigen::Vector3d> SoftFootState::computeConvexHull(const std::vector<
   return ret;
 }
 
+void SoftFootState::computeMinMaxAngle(const Foot & current_moving_foot)
+{
+  if(nr_phalanxes_ > 1.)
+  {
+    const double MASS_PHALANX = 0.2;
+    const double MASS_ROBOT = 43.;
+    const double nr_phalanxes = static_cast<double>(nr_phalanxes_);
+    const double k = foot_data_[current_moving_foot].k;
+    const double d = 2.;
+    const double f0 = MASS_ROBOT*9.81*(foot_length_/2.); 
+    const double I = (10.*MASS_PHALANX*phalanx_length_*phalanx_length_)/3. ;
+    
+    auto odefcn = [=](const std::vector<double>& x, std::vector<double>& dx, const double t)
+    {
+        dx[0] = x[1];
+        dx[1] = (- (nr_phalanxes - 1.) * k * x[0] - (nr_phalanxes - 1.) * d * x[1] + f0) / I;
+    };
+
+    double angle = 0.;
+    auto observer = [&angle](const std::vector<double>& x, const double t)
+    {
+        angle = x[0] * 180. / M_PI;
+    };
+
+    typedef boost::numeric::odeint::runge_kutta_dopri5<std::vector<double>> stepper_type;
+    const double dt = 0.1;
+    std::vector<double> x(2);
+    x[0] = 0.0;
+    x[1] = 0.0;
+    boost::numeric::odeint::integrate_const(boost::numeric::odeint::make_dense_output<stepper_type>( 1E-6, 1E-3 ),
+          odefcn, x, 0.0, 10.0, dt , observer);
+
+    angle = angle / (nr_phalanxes - 1.);
+
+    mc_rtc::log::info("Min/max angle is {}", angle);
+
+    foot_data_[current_moving_foot].min_max_phalanxes_angle = angle;
+  }
+  else
+  {
+    foot_data_[current_moving_foot].min_max_phalanxes_angle = M_PI;
+  }
+}
 
 void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot, const Eigen::Vector3d & default_landing_pos)
 {
@@ -638,10 +767,14 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
   };
   
   //
-  auto computeSide = [&](int start, int end, double direction, const Eigen::Vector3d & phalanx_pos, double theta, std::vector<double>& ret_phalanxes_theta) -> std::vector<Eigen::Vector3d>
+  auto computeSide = [&](int start, int end, double direction, const Eigen::Vector3d & phalanx_pos,
+    double theta, std::vector<double>& ret_phalanxes_theta, std::vector<Eigen::Vector2d>& ret_contact_points) -> std::vector<Eigen::Vector3d>
   {
     std::vector<Eigen::Vector3d> ret;
-
+    if(start == end)
+    {
+      return ret;
+    }
     const std::vector<Eigen::Vector3d> & ground = ground_segment_[current_moving_foot].filtered;
 
     // std::cout << "phalanx_pos " << phalanx_pos.transpose() << std::endl;
@@ -654,20 +787,23 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
 
     // std::cout << "phalanx_pos_side " << next_phalanx_side_pos.transpose() << std::endl;
 
-    // Create linspace of theta to evaluate
+    // Create linspace of theta to evaluate using the foot_data_[current_moving_foot].min_max_phalanxes_angle
+    const double min_max_phalanxes_angle = std::min(M_PI * 0.5, foot_data_[current_moving_foot].min_max_phalanxes_angle);
+    const double start_theta = direction * min_max_phalanxes_angle - direction * 0.01;
+    const double end_theta = -direction * min_max_phalanxes_angle + direction * 0.01;
     // const double start_theta = direction * M_PI * 0.5 - direction * 0.01;
     // const double end_theta = -direction * M_PI * 0.5  + direction * 0.01;
-    const double start_theta = direction * M_PI * 0.25 - direction * 0.01;
-    const double end_theta = -direction * M_PI * 0.25  + direction * 0.01;
     // std::cout << "direction " << direction << std::endl; 
-    // std::cout << "start_theta " << start_theta << " end_theta " << end_theta << std::endl;
+    std::cout << "start_theta " << start_theta << " end_theta " << end_theta << std::endl;
     const std::vector<double> evaluated_thetas = linspace(start_theta, end_theta, 90); // [rad]
     //
     const std::vector<int> phalanx_idxs = linspace(start, end, std::abs(end - start) + 1);
-    double theta_intersection = 0.;
-    bool is_intersection = false;
     for(const auto& phalanx_i: phalanx_idxs)
     {
+      double theta_intersection = 0.;
+      bool is_intersection = false;
+      Eigen::Vector2d contact_found;
+
       if(phalanx_i < nr_phalanxes_)
       {        
         Eigen::Vector3d phalanx_pos_left;
@@ -704,7 +840,7 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
           for(const auto& ev_theta: evaluated_thetas)
           {
             // std::cout << "phalanx_pos_left " << phalanx_pos_left.transpose() << " phalanx_pos_right " << phalanx_pos_right.transpose() << std::endl;
-            is_intersection = evaluateTheta(ev_theta, direction, next_phalanx_side_pos, ground_under_phalanx);
+            is_intersection = evaluateTheta(ev_theta, direction, next_phalanx_side_pos, ground_under_phalanx, contact_found);
             if(is_intersection)
             {
               const double step_theta = 2. * M_PI / 180.;
@@ -713,7 +849,7 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
               const std::vector<double> evaluated_precise_thetas = linspace(start_theta, end_theta, 10); // [rad]
               for(const auto& ev_pre_theta: evaluated_precise_thetas)
               {
-                is_intersection = evaluateTheta(ev_pre_theta, direction, next_phalanx_side_pos, ground_under_phalanx);
+                is_intersection = evaluateTheta(ev_pre_theta, direction, next_phalanx_side_pos, ground_under_phalanx, contact_found);
                 if(is_intersection)
                 {
                   // std::cout << "ev_pre_theta: " << ev_pre_theta << std::endl;
@@ -728,7 +864,8 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
 
         if(is_intersection)
         {
-          std::cout << "intersection found" << std::endl;
+          // std::cout << "intersection found" << std::endl;
+          ret_contact_points.push_back(contact_found);
         }
         else
         {
@@ -759,7 +896,7 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
   const std::vector<double> position_offsets_x = {0., -0.05, -0.03, -0.01, 0.01, 0.03, 0.05};
   // const std::vector<double> position_offsets_x = {0.};
   const auto & convex = ground_segment_[current_moving_foot].convex;
-  double maximized_distance_between_phalanxes = std::numeric_limits<double>::min();
+  double maximized_distance_between_phalanxes = std::numeric_limits<double>::lowest();
   for(const auto & position_offset_x: position_offsets_x)
   {
     // Compute landing pos to evaluate
@@ -768,7 +905,7 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
     const double min_x_foot = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5, 0., 0.)) * landing_pos).translation().x();
     const double max_x_foot = (sva::PTransformd(Eigen::Vector3d(+foot_length_ * 0.5, 0., 0.)) * landing_pos).translation().x();   
     // Find highest point on hull
-    Eigen::Vector3d highest_point_on_convex(0., 0., std::numeric_limits<double>::min());
+    Eigen::Vector3d highest_point_on_convex(0., 0., std::numeric_limits<double>::lowest());
     for(const auto & pos: convex)
     {
       if(pos.x() >= min_x_foot && pos.x() <= max_x_foot && pos.z() > highest_point_on_convex.z())
@@ -776,10 +913,11 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
         highest_point_on_convex = pos;
       }
     }
+
     // std::cout << "Highest point on convex hull is " << highest_point_on_convex.transpose() << std::endl;
     // Compute which n-th phalanx will land on the highest point
     size_t n_phalanx = whichPhalanxItIs(landing_pos.translation(), highest_point_on_convex);
-    std::cout << "The n-th phalanx is " <<  n_phalanx << std::endl;
+    // std::cout << "The n-th phalanx is " <<  n_phalanx << std::endl;
     // phalanx_pos is the middle of the phalanx
     const Eigen::Vector3d phalanx_pos_start = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + n_phalanx * phalanx_length_, 0., 0.)) * landing_pos).translation();
     const Eigen::Vector3d phalanx_pos_end = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + (n_phalanx + 1) * phalanx_length_, 0., 0.)) * landing_pos).translation();
@@ -810,44 +948,71 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
     // std::cout << "phalanx_pos_right " << phalanx_pos_right.transpose() << std::endl;
 
     // std::cout << "n_phalanx " << n_phalanx << " nr_phalanxes_ " << nr_phalanxes_ << std::endl;
-    // Compute right part
-    std::vector<double> right_side_phalanxes_theta;
-    // std::cout << "Right side" << std::endl;
-    const std::vector<Eigen::Vector3d> right_side_phalanxes_pos = computeSide(n_phalanx, nr_phalanxes_, +1., phalanx_pos, theta, right_side_phalanxes_theta);
-
-    // Compute left part
-    std::vector<double> left_side_phalanxes_theta;
-    // std::cout << "Left side" << std::endl;
-    const std::vector<Eigen::Vector3d> left_side_phalanxes_pos = computeSide(n_phalanx, 0, -1., phalanx_pos, theta, left_side_phalanxes_theta);
-
-    double distance_between_phalanxes = right_side_phalanxes_pos.back().x() - left_side_phalanxes_pos.back().x(); 
-    if(foot_data_[current_moving_foot].phalanxes.empty() || distance_between_phalanxes > maximized_distance_between_phalanxes)
+    if(nr_phalanxes_ > 2)
     {
-      maximized_distance_between_phalanxes = distance_between_phalanxes;
-      foot_data_[current_moving_foot].position_offset = position_offset_x;
-      mc_rtc::log::info("New maximized found for {}", position_offset_x);
-      foot_data_[current_moving_foot].phalanxes.clear();
-      // Fill phalanxes
-      for(int i = left_side_phalanxes_pos.size() - 1; i >= 0 ; --i)
+      // Compute right part
+      std::vector<double> right_side_phalanxes_theta;
+      std::vector<Eigen::Vector2d> right_contact_points;
+      // std::cout << "Right side" << std::endl;
+      const std::vector<Eigen::Vector3d> right_side_phalanxes_pos = computeSide(n_phalanx, nr_phalanxes_, +1., phalanx_pos, theta, right_side_phalanxes_theta, right_contact_points);
+
+      // Compute left part
+      std::vector<double> left_side_phalanxes_theta;
+      std::vector<Eigen::Vector2d> left_contact_points;
+      // std::cout << "Left side" << std::endl;
+      const std::vector<Eigen::Vector3d> left_side_phalanxes_pos = computeSide(n_phalanx, 0, -1., phalanx_pos, theta, left_side_phalanxes_theta, left_contact_points);
+
+      double distance_between_phalanxes = 0.;
+      if(left_contact_points.size() > 0 && right_contact_points.size() > 0)
       {
-        addLeftPhalanxToPhalanxes(left_side_phalanxes_pos[i], left_side_phalanxes_theta[i]);
+        distance_between_phalanxes = right_contact_points.back().x() - left_contact_points.back().x();
+      }
+      else if(left_contact_points.size() > 0)
+      {
+        distance_between_phalanxes = phalanx_pos.x() - left_contact_points.back().x();
+      }
+      else if(right_contact_points.size() > 0)
+      {
+        distance_between_phalanxes = right_contact_points.back().x() - phalanx_pos.x();
       }
 
+      if(foot_data_[current_moving_foot].phalanxes.empty() || distance_between_phalanxes > maximized_distance_between_phalanxes)
+      {
+        maximized_distance_between_phalanxes = distance_between_phalanxes;
+        foot_data_[current_moving_foot].position_offset = position_offset_x;
+        mc_rtc::log::info("New maximized found for {}", position_offset_x);
+        mc_rtc::log::info("distance_between_phalanxes {}", distance_between_phalanxes);
+        foot_data_[current_moving_foot].phalanxes.clear();
+        // Fill phalanxes
+        for(int i = left_side_phalanxes_pos.size() - 1; i >= 0 ; --i)
+        {
+          addLeftPhalanxToPhalanxes(left_side_phalanxes_pos[i], left_side_phalanxes_theta[i]);
+        }
+
+        const std::array<double, 2> start = {phalanx_pos_left.x(), phalanx_pos_left.z()};
+        foot_data_[current_moving_foot].phalanxes.push_back(start);
+
+        const std::array<double, 2> end = {phalanx_pos_right.x(), phalanx_pos_right.z()};
+        foot_data_[current_moving_foot].phalanxes.push_back(end);
+
+        for(int i = 0; i < right_side_phalanxes_pos.size() ; ++i)
+        {
+          addRightPhalanxToPhalanxes(right_side_phalanxes_pos[i], right_side_phalanxes_theta[i]);
+        }
+      }
+    }
+    else
+    {
       const std::array<double, 2> start = {phalanx_pos_left.x(), phalanx_pos_left.z()};
       foot_data_[current_moving_foot].phalanxes.push_back(start);
 
       const std::array<double, 2> end = {phalanx_pos_right.x(), phalanx_pos_right.z()};
       foot_data_[current_moving_foot].phalanxes.push_back(end);
-
-      for(int i = 0; i < right_side_phalanxes_pos.size() ; ++i)
-      {
-        addRightPhalanxToPhalanxes(right_side_phalanxes_pos[i], right_side_phalanxes_theta[i]);
-      }
     }
   }
 }
 
-bool SoftFootState::evaluateTheta(double theta, double direction, const Eigen::Vector3d& pos, const std::vector<Eigen::Vector3d>& ground_under_phalanx)
+bool SoftFootState::evaluateTheta(double theta, double direction, const Eigen::Vector3d& pos, const std::vector<Eigen::Vector3d>& ground_under_phalanx, Eigen::Vector2d& output)
 {
   // To check if the intersection belongs to the segment we are evaluating
   auto isPointOnSegment = [](const Eigen::Vector2d& A, const Eigen::Vector2d& B, const Eigen::Vector2d& C) -> bool
@@ -912,7 +1077,8 @@ bool SoftFootState::evaluateTheta(double theta, double direction, const Eigen::V
       // Check if the point is on the segment
       // // std::cout << "Found a zero at " << i << std::endl;
       // // std::cout << "Ground " << Eigen::Vector2d(ground_under_phalanx[i].x(), ground_under_phalanx[i].z()).transpose() << std::endl;
-      if(isPointOnSegment(start_offset, end, Eigen::Vector2d(ground_under_phalanx[i].x(), ground_under_phalanx[i].z())))
+      output = Eigen::Vector2d(ground_under_phalanx[i].x(), ground_under_phalanx[i].z());
+      if(isPointOnSegment(start_offset, end, output))
       {
         return true;
       }
@@ -953,8 +1119,14 @@ void SoftFootState::updateFootSwingPose(mc_control::fsm::Controller & ctl, const
   
   // Follow Murooka-san code to update, sorry for the dirty access
   // The order is important
-  dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosX(desired_offset_position_x);
-  dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePitch(desired_angle);
+  if(with_foot_adjustment_)
+  {
+    dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosX(desired_offset_position_x);
+  }
+  if(with_ankle_rotation_)
+  {
+    dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePitch(desired_angle);
+  }
 }
 
 
@@ -962,6 +1134,9 @@ void SoftFootState::reset(mc_control::fsm::Controller & ctl, const Foot & foot)
 {
   foot_data_[foot].need_reset = false;
   foot_data_[foot].computation_done = false;
+  foot_data_[foot].min_max_phalanxes_angle = 0.;
+  foot_data_[foot].position_offset = 0.;
+  foot_data_[foot].k = 0.;
   // Delete all the data that are behind the foot
   const auto X_0_p = ctl.robot().surfacePose(surface_name_[foot]);
   auto & ground = foot_data_[foot].ground;
@@ -985,6 +1160,15 @@ void SoftFootState::reset(mc_control::fsm::Controller & ctl, const Foot & foot)
   // Reset logger
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_range");
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_ground");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_filtered_x");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_convex_x");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_filtered_y");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_convex_y");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_k");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_angle");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_min_max_phalanxes_angle");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_position_offset");
+
 
   // Reset GUI
   ctl.gui()->removeElement({"SoftFoot"}, other_name + "_point_ground");
@@ -1001,6 +1185,8 @@ void SoftFootState::reset(mc_control::fsm::Controller & ctl, const Foot & foot)
 
   ctl.gui()->removeElement({"SoftFoot"}, other_name + "_convex_display");
   ctl.gui()->removeElement({"SoftFoot"}, name + "_convex_display");
+
+  // Reset log
 }
 
 

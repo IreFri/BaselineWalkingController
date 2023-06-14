@@ -11,6 +11,7 @@ namespace BWC
 struct SoftFootState : State
 {
 public:
+
   /** \brief Start. */
   void start(mc_control::fsm::Controller & ctl) override;
 
@@ -36,6 +37,8 @@ protected:
 
   std::vector<Eigen::Vector3d> computeConvexHull(const std::vector<Eigen::Vector3d>& data);
 
+  void computeMinMaxAngle(const Foot & current_moving_foot);
+
   void computeFootLandingPosition(const Foot & current_moving_foot, const Eigen::Vector3d & landing);
 
   void computeFootLandingAngle(const Foot & current_moving_foot, const Eigen::Vector3d & landing);
@@ -59,7 +62,7 @@ protected:
     return current_moving_foot;
   }
 
-  bool evaluateTheta(double theta, double direction, const Eigen::Vector3d& pos, const std::vector<Eigen::Vector3d>& ground);
+  bool evaluateTheta(double theta, double direction, const Eigen::Vector3d& pos, const std::vector<Eigen::Vector3d>& ground, Eigen::Vector2d& output);
 
 protected:
   // Used to compute the cost to understand which is the best stiffness
@@ -69,7 +72,8 @@ protected:
   double lambda_CoM_ = 3.0;
   std::vector<double> CoM_; 
 
-  double footstep_error_ = 0.0;
+  double nr_remaining_footstep_ = 0.0;
+  double nr_footstep_ = 0.0;
   double lambda_footstep_ = 10.0;
 
   double cost_ = 0.0;
@@ -85,6 +89,7 @@ protected:
     std::vector<double> altitude;
     double k;
     double angle;
+    double min_max_phalanxes_angle;
     double position_offset;
     bool need_reset;
     bool computation_done;
@@ -117,13 +122,18 @@ protected:
 
   // TODO: Ugly hardcoded value
   double foot_length_ = 0.27742;
-  size_t nr_phalanxes_ = 10;
-  double phalanx_length_ = 0.27742 / static_cast<double>(nr_phalanxes_);
+  size_t nr_phalanxes_;
+  double phalanx_length_;
 
   // Reset data
   void reset(mc_control::fsm::Controller & ctl, const Foot & foot);
  
   // Client is here to call the service to compute the stiffness based on the ground profile
   ros::ServiceClient client_; 
+
+  // options
+  bool with_variable_stiffness_ = false;
+  bool with_ankle_rotation_ = false;
+  bool with_foot_adjustment_ = false;
 };
 } // namespace BWC
