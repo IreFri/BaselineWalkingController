@@ -101,7 +101,7 @@ public:
    /** \brief Update the internal state of the swing trajectory.
       \param x_offset x offset
   */
-  void updatePosX(double x_offset);
+  void updatePosXZ(double x_offset, double z_offset);
 
   /** \brief Calculate the pose of the swing trajectory at a specified time.
       \param t time

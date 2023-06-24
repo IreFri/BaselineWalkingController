@@ -50,7 +50,7 @@ states:
     base: BWC::SoftFoot
     with_ankle_rotation: true
     with_foot_adjustment: true
-    nr_phalanx: 10
+    nr_phalanx: 1
     
   BWC::Main_:
     base: Parallel
@@ -408,32 +408,37 @@ robots:
       frame: CHEST_Y_LINK
 
     FootManager:
-      footstepDuration: 1.6 # [sec]
+      midToFootTranss:
+        Left:
+          translation: [0, 0.080, 0] # [m]
+        Right:
+          translation: [0, -0.080, 0] # [m]
+      footstepDuration: 2.0 # [sec]
       doubleSupportRatio: 0.2 # []
       zmpOffset: [0, -0.02, 0] # (positive for x-forward, y-outside, z-upward) [m]
       defaultSwingTrajType: LandingSearch
       overwriteLandingPose: false
-      stopSwingTrajForTouchDownFoot: false
+      stopSwingTrajForTouchDownFoot: true
       keepPoseForTouchDownFoot: false
-      enableWrenchDistForTouchDownFoot: false
+      enableWrenchDistForTouchDownFoot: true
       touchDownForceZ: 200 # [N]
       impedanceGains:
         SingleSupport:
           damper:
-            linear: [300, 300, 300]
-            angular: [40, 40, 100]
+            linear: [300, 300, 300] # [300, 300, 300]
+            angular: [40, 40, 100] # [40, 40, 100]
           spring:
-            linear: [2250, 2250, 2250]
-            angular: [0, 0, 2000]
+            linear: [2250, 2250, 2250] # [2250, 2250, 2250]
+            angular: [0, 0, 2000] # [0, 0, 2000]
           wrench:
             linear: [0, 0, 0]
             angular: [1, 1, 0]
         DoubleSupport:
           damper:
-            linear: [300, 300, 2e3]
+            linear: [300, 300, 2e3] # [300, 300, 2e3]
             angular: [40, 40, 100]
           spring:
-            linear: [2250, 2250, 0]
+            linear: [2250, 2250, 0] # [2250, 2250, 0]
             angular: [0, 0, 2000]
           wrench:
             linear: [0, 0, 1]
@@ -443,18 +448,18 @@ robots:
             linear: [300, 300, 300]
             angular: [40, 40, 40]
           spring:
-            linear: [2250, 2250, 2250]
-            angular: [400, 400, 400]
+            linear: [2250, 2250, 2250] # [2250, 2250, 2250]
+            angular: [400, 400, 400] #[400, 400, 400]
           wrench:
             linear: [0, 0, 0]
             angular: [0, 0, 0]
       SwingTraj:
         LandingSearch:
           withdrawDurationRatio: 0.25
-          withdrawOffset: [0, 0, 0.04] # [m]
+          withdrawOffset: [0, 0, 0.08] # [m]
           preApproachDurationRatio: 0.05
           approachDurationRatio: 0.20
-          approachOffset: [0, 0, 0.04] # [m]
+          approachOffset: [0, 0, 0.08] # [m]
 
     CentroidalManager:
       dcmGainP: 2.0 # It must be greater than 1 to be stable
@@ -491,6 +496,10 @@ robots:
       zmpOffset: [0, -0.02, 0] # (positive for x-forward, y-outside, z-upward) [m]
       defaultSwingTrajType: LandingSearch
       touchDownForceZ: 200 # [N]
+      overwriteLandingPose: false
+      stopSwingTrajForTouchDownFoot: true
+      keepPoseForTouchDownFoot: false
+      enableWrenchDistForTouchDownFoot: true
       impedanceGains:
         SingleSupport:
           damper:
@@ -525,10 +534,10 @@ robots:
       SwingTraj:
         LandingSearch:
           withdrawDurationRatio: 0.25
-          withdrawOffset: [0, 0, 0.04] # [m]
+          withdrawOffset: [0, 0, 0.07] # [m]
           preApproachDurationRatio: 0.05
           approachDurationRatio: 0.20
-          approachOffset: [0, 0, 0.04] # [m]
+          approachOffset: [0, 0, 0.07] # [m]
 
     CentroidalManager:
       dcmGainP: 2.0 # It must be greater than 1 to be stable
