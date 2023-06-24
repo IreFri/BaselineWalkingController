@@ -90,7 +90,8 @@ protected:
     double k;
     double angle;
     double min_max_phalanxes_angle;
-    double position_offset;
+    double position_offset_x;
+    double position_offset_z;
     bool need_reset;
     bool computation_done;
   };

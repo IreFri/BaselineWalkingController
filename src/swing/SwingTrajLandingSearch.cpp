@@ -70,6 +70,7 @@ SwingTrajLandingSearch::SwingTrajLandingSearch(const sva::PTransformd & startPos
                        {preApproachTime, sva::PTransformd(config_.approachOffset) * endPose_},
                        {approachTime, sva::PTransformd(config_.approachOffset) * endPose_},
                        {endTime_, endPose_}};
+
   poseFunc_ = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>(waypointPoseList_);
 }
 
@@ -113,18 +114,28 @@ void SwingTrajLandingSearch::updatePitch(double pitch)
   }
 
   endPose_ = newEndPose;
-  std::next(waypointPoseList_.rbegin())->second = sva::PTransformd(config_.approachOffset) * endPose_;
-  waypointPoseList_.rbegin()->second = endPose_;
+
+  std::next(waypointPoseList_.rbegin(), 2)->second = sva::PTransformd(config_.approachOffset) * endPose_;
+  std::next(waypointPoseList_.rbegin(), 1)->second = sva::PTransformd(config_.approachOffset) * endPose_;
+  std::next(waypointPoseList_.rbegin(), 0)->second = endPose_;
+
   poseFunc_ = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>(waypointPoseList_);
+
+  mc_rtc::log::error("waypointPoseList_.size() {}", waypointPoseList_.size());
+  mc_rtc::log::error("PITCH UPDATED");
 }
 
-void SwingTrajLandingSearch::updatePosX(double x_offset)
+void SwingTrajLandingSearch::updatePosXZ(double x_offset, double z_offset)
 {
   const sva::PTransformd newEndPose = sva::PTransformd(Eigen::Vector3d(x_offset, 0., 0.)) * endPose_;
   endPose_ = newEndPose;
   
-  std::next(waypointPoseList_.rbegin())->second = sva::PTransformd(config_.approachOffset) * endPose_;
-  waypointPoseList_.rbegin()->second = endPose_;
+  std::next(waypointPoseList_.rbegin(), 2)->second = sva::PTransformd((config_.approachOffset + Eigen::Vector3d(0., 0., z_offset)).eval()) * endPose_;
+  std::next(waypointPoseList_.rbegin(), 1)->second = sva::PTransformd((config_.approachOffset + Eigen::Vector3d(0., 0., z_offset)).eval()) * endPose_;
+  std::next(waypointPoseList_.rbegin(), 0)->second = endPose_;
+
+  mc_rtc::log::error("x_offset {} z_offset {}", x_offset, z_offset);
+
   poseFunc_ = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>(waypointPoseList_);
 }
 
