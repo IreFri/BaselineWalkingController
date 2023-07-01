@@ -4,6 +4,8 @@
 
 #include <mc_rtc/ros.h>
 #include <ros/ros.h>
+#include <std_msgs/Float64.h>
+#include <mutex>
 
 namespace BWC
 {
@@ -136,5 +138,14 @@ protected:
   bool with_variable_stiffness_ = false;
   bool with_ankle_rotation_ = false;
   bool with_foot_adjustment_ = false;
+
+  // Subscriber to update the range sensor
+  ros::Subscriber right_foot_range_sensor_sub_;
+  void rightFRSCallback(const std_msgs::Float64::ConstPtr& data);
+
+  ros::Subscriber left_foot_range_sensor_sub_;
+  void leftFRSCallback(const std_msgs::Float64::ConstPtr& data);
+
+  std::mutex range_sensor_mutex_;
 };
 } // namespace BWC

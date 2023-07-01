@@ -12,10 +12,13 @@ target_link_libraries(GuiWalkState PUBLIC
 
 message(STATUS "Got STATES Qhull ${Qhull_VERSION}")
 
-add_fsm_state(SoftFootState SoftFootState.cpp)
 
+add_fsm_state(SoftFootState SoftFootState.cpp)
+target_include_directories(
+  SoftFootState SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../../3rd-party/qhull/src"
+)
 target_link_libraries(SoftFootState PUBLIC
-${CONTROLLER_NAME} mc_mujoco::devices qhullcpp qhull_r)
+  ${CONTROLLER_NAME} mc_mujoco::devices qhullcpp qhull_r)
 
 add_fsm_state(TeleopState TeleopState.cpp)
 target_link_libraries(TeleopState PUBLIC
