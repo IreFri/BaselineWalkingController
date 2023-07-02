@@ -14,7 +14,7 @@ option(INSTALL_DOCUMENTATION "Generate and install the documentation" OFF)
 include(cmake/base.cmake)
 project(baseline_walking_controller LANGUAGES CXX)
 
-add_project_dependency(Qhull 8.1 REQUIRED)
+#add_project_dependency(Qhull 8.1 REQUIRED)
 # mc_rtc
 add_project_dependency(mc_rtc REQUIRED)
 if(NOT TARGET mc_rtc::mc_rtc_ros)
@@ -54,6 +54,13 @@ if(DEFINED CATKIN_DEVEL_PREFIX)
   include_directories(include ${catkin_INCLUDE_DIRS})
   link_directories(${catkin_LIBRARY_DIRS})
   set(CONFIG_OUT "${CATKIN_DEVEL_PREFIX}/lib/mc_controller/etc/BaselineWalkingController.yaml")
+  set(CONFIG_DIR_STANDALONE "${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/BaselineWalkingController")
+  set(CONFIG_DIR_CATKIN "${CATKIN_DEVEL_PREFIX}/lib/mc_controller/BaselineWalkingController")
+  if(EXISTS "${CONFIG_DIR_STANDALONE}" AND IS_DIRECTORY "${CONFIG_DIR_STANDALONE}")
+    execute_process(COMMAND cmake -E create_symlink
+      "${CONFIG_DIR_STANDALONE}" "${CONFIG_DIR_CATKIN}"
+    )
+  endif()
   configure_file(etc/mc_rtc.in.yaml ${PROJECT_SOURCE_DIR}/etc/mc_rtc.yaml @ONLY)
   set(STATES_INSTALL_PREFIX ${CATKIN_DEVEL_PREFIX}/lib)
 else()
@@ -70,7 +77,8 @@ endif()
 configure_file(etc/BaselineWalkingController.in.yaml "${CONFIG_OUT}" @ONLY)
 install(FILES ${CONFIG_OUT} DESTINATION ${MC_RTC_LIBDIR}/mc_controller/etc/)
 
-# add_subdirectory(3rd-party/qhull)
+add_subdirectory(3rd-party/qhull EXCLUDE_FROM_ALL)
+
 add_subdirectory(src)
 
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/BaselineWalkingController DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h")
@@ -82,3 +90,6 @@ endif()
 if(INSTALL_DOCUMENTATION)
   add_subdirectory(doc)
 endif()
+
+set(PACKAGE_EXTRA_MACROS "set(BWC_STATES_LIBRARIES \"${MC_CONTROLLER_INSTALL_PREFIX}/baseline_walking_controller/states\")
+set(BWC_STATES_FILES \"\${BWC_STATES_LIBRARIES}/data\")")

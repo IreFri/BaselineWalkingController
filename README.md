@@ -1,8 +1,7 @@
 # [BaselineWalkingController](https://github.com/isri-aist/BaselineWalkingController)
 Humanoid walking controller with various baseline methods
 
-[![CI](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci-standalone.yaml/badge.svg)](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci-standalone.yaml)
-[![CI](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci-catkin.yaml/badge.svg)](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci-catkin.yaml)
+[![CI](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci.yaml/badge.svg)](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci.yaml)
 [![Documentation](https://img.shields.io/badge/doxygen-online-brightgreen?logo=read-the-docs&style=flat)](https://isri-aist.github.io/BaselineWalkingController/)
 [![LICENSE](https://img.shields.io/github/license/isri-aist/BaselineWalkingController)](https://github.com/isri-aist/BaselineWalkingController/blob/master/LICENSE)
 [![Docker](https://img.shields.io/badge/Docker%20image-ready-blue)](https://github.com/isri-aist/BaselineWalkingController/pkgs/container/baseline_walking_controller)
@@ -73,6 +72,7 @@ This controller is a simple combination of the following existing typical elemen
 
 For more information on the technical details, please see the following papers:
 - Papers listed in [CentroidalControlCollection](https://github.com/isri-aist/CentroidalControlCollection)
+- Papers listed in [ForceControlCollection](https://github.com/isri-aist/ForceControlCollection)
 - S Kajita, et al. Biped walking stabilization based on linear inverted pendulum tracking. IROS, 2010.
 - S Caron, et al. Stair climbing stabilization of the HRP-4 humanoid robot using whole-body admittance control. ICRA, 2019.
 

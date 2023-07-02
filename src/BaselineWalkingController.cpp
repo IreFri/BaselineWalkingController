@@ -7,7 +7,6 @@
 
 #include <BaselineWalkingController/BaselineWalkingController.h>
 #include <BaselineWalkingController/CentroidalManager.h>
-#include <BaselineWalkingController/ConfigUtils.h>
 #include <BaselineWalkingController/FootManager.h>
 #include <BaselineWalkingController/centroidal/CentroidalManagerDdpZmp.h>
 #include <BaselineWalkingController/centroidal/CentroidalManagerFootGuidedControl.h>
@@ -19,8 +18,30 @@ using namespace BWC;
 BaselineWalkingController::BaselineWalkingController(mc_rbdyn::RobotModulePtr rm,
                                                      double dt,
                                                      const mc_rtc::Configuration & _config)
-: mc_control::fsm::Controller(rm, dt, overwriteConfig(_config, rm->name))
+: mc_control::fsm::Controller(rm, dt, _config)
 {
+  // Get the robot-specific configuration
+  auto rconfig = config()("robots")(robot().module().name);
+  if(rconfig.empty())
+  {
+    mc_rtc::log::error_and_throw("[BaselineWalkingController] {} section is empty, please provide a configuration",
+                                 robot().module().name);
+  }
+  // Load the robot's configuration into the controller's configuration
+  config().load(rconfig);
+  // Load extra-overwrites
+  auto overwriteConfigList = config()("OverwriteConfigList", mc_rtc::Configuration());
+  auto overwriteConfigKeys = config()("OverwriteConfigKeys", std::vector<std::string>{});
+  for(const auto & overwriteConfigKey : overwriteConfigKeys)
+  {
+    if(!overwriteConfigList.has(overwriteConfigKey))
+    {
+      mc_rtc::log::error_and_throw(
+          "[BaselineWalkingController] {} in OverwriteConfigKeys but not in OverwriteConfigList", overwriteConfigKey);
+    }
+    config().load(overwriteConfigList(overwriteConfigKey));
+  }
+
   config()("controllerName", name_);
 
   // Setup tasks

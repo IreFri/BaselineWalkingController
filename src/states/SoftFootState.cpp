@@ -164,11 +164,15 @@ void SoftFootState::start(mc_control::fsm::Controller & _ctl)
       })
   );
 
-  output("OK");
+  // Subscriber for the range sensors
+  right_foot_range_sensor_sub_ = mc_rtc::ROSBridge::get_node_handle()->subscribe("range_sensor/distance", 1, &SoftFootState::rightFRSCallback, this);
+  left_foot_range_sensor_sub_ = mc_rtc::ROSBridge::get_node_handle()->subscribe("range_sensor/distance", 1, &SoftFootState::leftFRSCallback, this);
 }
 
 bool SoftFootState::run(mc_control::fsm::Controller & ctl)
 {
+  ros::spinOnce();
+
   // Cast ctl to BaselineWalkingController
   auto & ctrl = static_cast<BWC::BaselineWalkingController&>(ctl);
 
@@ -398,15 +402,15 @@ void SoftFootState::estimateGround(mc_control::fsm::Controller & ctl, const Foot
   // Returns the transformation from the parent body to the sensor
   const sva::PTransformd& X_ph_s = ctl.robot().device<mc_mujoco::RangeSensor>(sensor_name).X_p_s();
   // Sensor position in global frame Z coordinate
-  data.range = ctl.robot().device<mc_mujoco::RangeSensor>(sensor_name).data();
-  // mc_rtc::log::error("data.range {}", data.range);
-  if(data.range > 0.13)
   {
-    const sva::PTransformd X_s_m = sva::PTransformd(Eigen::Vector3d(0, 0, data.range));
-    sva::PTransformd X_0_m = X_s_m*X_ph_s*X_0_ph;
-    // Keep the estimated 3d point for the ground
-    data.ground.push_back(X_0_m.translation());
-  } 
+    const std::lock_guard<std::mutex> lock(range_sensor_mutex_);
+    data.range = ctl.robot().device<mc_mujoco::RangeSensor>(sensor_name).data();
+  }
+  // mc_rtc::log::error("data.range {}", data.range);
+  const sva::PTransformd X_s_m = sva::PTransformd(Eigen::Vector3d(0, 0, data.range));
+  sva::PTransformd X_0_m = X_s_m*X_ph_s*X_0_ph;
+  // Keep the estimated 3d point for the ground
+  data.ground.push_back(X_0_m.translation());
 }
 
 void SoftFootState::extractGroundSegment(mc_control::fsm::Controller & ctl, const Foot & current_moving_foot, const Eigen::Vector3d & landing)
@@ -1060,22 +1064,25 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
 
       std::vector<Eigen::Vector2d> contact_points;
       // Compute points for line that matches
-      double previous_diff_y = f(ground_under_phalanx[0].x()) - ground_under_phalanx[0].z();
-      for(size_t i = 1; i < ground_under_phalanx.size(); ++i)
+      if(!ground_under_phalanx.empty())
       {
-        const double line_y = f(ground_under_phalanx[i].x());
-        const double diff_y = line_y - ground_under_phalanx[i].z();
-        // We check if it is a possible 0
-        if(previous_diff_y * diff_y <= 0.)
+        double previous_diff_y = f(ground_under_phalanx[0].x()) - ground_under_phalanx[0].z();
+        for(size_t i = 1; i < ground_under_phalanx.size(); ++i)
         {
-          // Check if the point is on the segment
-          Eigen::Vector2d output(ground_under_phalanx[i].x(), ground_under_phalanx[i].z());
-          if(isPointOnSegment(start, end, output))
+          const double line_y = f(ground_under_phalanx[i].x());
+          const double diff_y = line_y - ground_under_phalanx[i].z();
+          // We check if it is a possible 0
+          if(previous_diff_y * diff_y <= 0.)
           {
-            contact_points.push_back(output);
+            // Check if the point is on the segment
+            Eigen::Vector2d output(ground_under_phalanx[i].x(), ground_under_phalanx[i].z());
+            if(isPointOnSegment(start, end, output))
+            {
+              contact_points.push_back(output);
+            }
           }
+          previous_diff_y = diff_y;
         }
-        previous_diff_y = diff_y;
       }
       std::cout << "nr contact points found " << contact_points.size() << std::endl;
       // distance_between_phalanxes = TODO do something here to compute something
@@ -1290,6 +1297,20 @@ void SoftFootState::reset(mc_control::fsm::Controller & ctl, const Foot & foot)
   // Reset log
 }
 
+void SoftFootState::rightFRSCallback(const std_msgs::Float64::ConstPtr& data)
+{
+  // Select data/string based on current_moving_foot
+  const std::string sensor_name = range_sensor_name_[Foot::Right];
+  const std::lock_guard<std::mutex> lock(range_sensor_mutex_);
+  ctl().robot().device<mc_mujoco::RangeSensor>(sensor_name).update(data->data * 0.001);
+}
 
+void SoftFootState::leftFRSCallback(const std_msgs::Float64::ConstPtr& data)
+{
+  // Select data/string based on current_moving_foot
+  const std::string sensor_name = range_sensor_name_[Foot::Left];
+  const std::lock_guard<std::mutex> lock(range_sensor_mutex_);
+  ctl().robot().device<mc_mujoco::RangeSensor>(sensor_name).update(data->data * 0.001);
+}
 
 EXPORT_SINGLE_STATE("BWC::SoftFoot", SoftFootState)
