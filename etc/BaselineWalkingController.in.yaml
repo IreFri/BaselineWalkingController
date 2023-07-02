@@ -49,7 +49,7 @@ states:
   BWC::SoftFoot_:
     base: BWC::SoftFoot
     with_ankle_rotation: true
-    with_foot_adjustment: true
+    with_foot_adjustment: false
     nr_phalanx: 1
     
   BWC::Main_:
@@ -123,7 +123,7 @@ FootManager:
   fricCoeff: 0.5
   touchDownRemainingDuration: 0.2 # [sec]
   touchDownPosError: 0.02 # [m]
-  touchDownForceZ: 100 # [N]
+  touchDownForceZ: 100 # [N] 
   impedanceGains:
     SingleSupport:
       damper:
@@ -410,18 +410,18 @@ robots:
     FootManager:
       midToFootTranss:
         Left:
-          translation: [0, 0.080, 0] # [m]
+          translation: [0, 0.10, 0]
         Right:
-          translation: [0, -0.080, 0] # [m]
-      footstepDuration: 2.0 # [sec]
-      doubleSupportRatio: 0.2 # []
-      zmpOffset: [0, -0.02, 0] # (positive for x-forward, y-outside, z-upward) [m]
+          translation: [0, -0.10, 0]
+      footstepDuration: 2.0 # [sec] 2.0 
+      doubleSupportRatio: 0.1 # [] 0.2
+      zmpOffset: [0, -0.01, 0] # (positive for x-forward, y-outside, z-upward) [m]
       defaultSwingTrajType: LandingSearch
       overwriteLandingPose: false
-      stopSwingTrajForTouchDownFoot: true
+      stopSwingTrajForTouchDownFoot: false
       keepPoseForTouchDownFoot: false
-      enableWrenchDistForTouchDownFoot: true
-      touchDownForceZ: 200 # [N]
+      enableWrenchDistForTouchDownFoot: false
+      touchDownForceZ: 140 # [N] It was 200 (130)
       impedanceGains:
         SingleSupport:
           damper:
@@ -455,16 +455,16 @@ robots:
             angular: [0, 0, 0]
       SwingTraj:
         LandingSearch:
-          withdrawDurationRatio: 0.25
+          withdrawDurationRatio: 0.15
           withdrawOffset: [0, 0, 0.08] # [m]
-          preApproachDurationRatio: 0.05
-          approachDurationRatio: 0.20
+          preApproachDurationRatio: 0.08
+          approachDurationRatio: 0.27
           approachOffset: [0, 0, 0.08] # [m]
 
     CentroidalManager:
       dcmGainP: 2.0 # It must be greater than 1 to be stable
       comZGainP: 20000.0
-      refComZ: 0.78 # [m]
+      refComZ: 0.78 # [m] 078
       method: PreviewControlZmp
       horizonDuration: 2.0 # [sec]
       horizonDt: 0.002 # [sec]

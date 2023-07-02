@@ -721,6 +721,7 @@ void FootManager::updateFootTraj()
 
       // Synchronize with end pose changes in swing trajectory
       swingFootstep_->pose = swingTraj_->endPose_;
+
     }
     else
     {
@@ -883,6 +884,42 @@ void FootManager::updateFootTraj()
       targetFootAccels_.at(swingFootstep_->foot) = swingTraj_->accel(ctl().t());
       footTaskGains_.at(swingFootstep_->foot) = swingTraj_->taskGain(ctl().t());
     }
+
+    // Update height of support foot
+    {
+      auto heightEstimation = [](mc_control::fsm::Controller & ctl, const Foot & current_support_foot)
+      {
+        // Estimation variation foot height
+        const double a = 0.08687;
+        const double b = 0.15692;
+        const double alpha = 0.5663;
+        const double beta = 1.0869;
+
+        // Ankle pitch
+        const std::string ankle_pitch_body_name = current_support_foot == Foot::Left ? "L_ANKLE_P_LINK" : "R_ANKLE_P_LINK";
+        const double ankle_pitch = mc_rbdyn::rpyFromMat(ctl.robot().bodyPosW(ankle_pitch_body_name).rotation()).y();
+
+        // Frontal Arch Encoder
+        const std::string frontal_arch_joint_name = current_support_foot == Foot::Left ? "L_FRONTAL_ARCH" : "R_FRONTAL_ARCH";
+        const auto rjo = ctl.robot().refJointOrder();
+        const size_t joint_index = std::find(rjo.cbegin(), rjo.cend(), frontal_arch_joint_name) - rjo.cbegin();
+        const double encoder = 0.02156203685837307 - ctl.robot().encoderValues()[joint_index];
+        
+        double height_variation = -(b * std::cos(encoder + beta - ankle_pitch) - a * std::cos(alpha));
+        mc_rtc::log::error("Height estimation for supporting foot {} encoder {} ankle_pitch {}", height_variation, encoder, ankle_pitch);
+        
+        return height_variation;
+      };
+
+      if(std::find(ctl().robot().refJointOrder().cbegin(), ctl().robot().refJointOrder().cend(), "L_FRONTAL_ARCH") != ctl().robot().refJointOrder().cend())
+      {
+        const auto support_foot = swingFootstep_->foot == Foot::Left ? Foot::Right : Foot::Left;
+        const double estimated_height = heightEstimation(ctl(), support_foot);
+
+        const auto & targetFootPose = targetFootPoses_.at(support_foot);
+        targetFootPoses_.at(support_foot) = sva::PTransformd(Eigen::Matrix3d::Identity(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), estimated_height));
+      }
+    }
   }
   else
   {
@@ -893,6 +930,13 @@ void FootManager::updateFootTraj()
       if(!(config_.keepPoseForTouchDownFoot && touchDown_))
       {
         targetFootPoses_.at(swingFootstep_->foot) = swingTraj_->endPose_;
+
+        // WARN/TODO: A bit ugly, it is to change the pose of the foot used for the computation of the vertex for the surface
+        // We can stop the foot mid-air, but because it is soft, the robot is going down
+        const auto & targetFootPose = targetFootPoses_.at(swingFootstep_->foot);
+        targetFootPoses_.at(swingFootstep_->foot) = sva::PTransformd(Eigen::Matrix3d::Identity(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), 0.));
+        // targetFootPoses_.at(swingFootstep_->foot) = sva::PTransformd(targetFootPose.rotation(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), 0.));
+        mc_rtc::log::error("YEEESSSSSSSSSSSSSSSSSSSSSSS");
       }
       targetFootVels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
       targetFootAccels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();

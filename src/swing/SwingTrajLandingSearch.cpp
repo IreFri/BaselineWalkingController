@@ -107,16 +107,13 @@ void SwingTrajLandingSearch::updatePitch(double pitch)
   // Compute current targeted foot angle
   double current_pitch = mc_rbdyn::rpyFromMat(endPose_.rotation())[1];
   // \todo Determine landing pose based on measurements
-  sva::PTransformd newEndPose;
-  {
-    Eigen::Matrix3d rotOffset = mc_rbdyn::rpyToMat(Eigen::Vector3d(0., pitch - current_pitch, 0.));
-    newEndPose = sva::PTransformd(rotOffset) * endPose_;
-  }
+  Eigen::Matrix3d rotOffset = mc_rbdyn::rpyToMat(Eigen::Vector3d(0., pitch - current_pitch, 0.));
+  const sva::PTransformd fakeEndPose = sva::PTransformd(rotOffset) * sva::PTransformd(endPose_.rotation(), Eigen::Vector3d(endPose_.translation().x(), endPose_.translation().y(), 0.));
 
-  endPose_ = newEndPose;
 
-  std::next(waypointPoseList_.rbegin(), 2)->second = sva::PTransformd(config_.approachOffset) * endPose_;
-  std::next(waypointPoseList_.rbegin(), 1)->second = sva::PTransformd(config_.approachOffset) * endPose_;
+  std::next(waypointPoseList_.rbegin(), 2)->second = sva::PTransformd(config_.approachOffset) * fakeEndPose;
+  std::next(waypointPoseList_.rbegin(), 1)->second = sva::PTransformd(config_.approachOffset) * fakeEndPose;
+  endPose_ = sva::PTransformd(rotOffset) * endPose_;
   std::next(waypointPoseList_.rbegin(), 0)->second = endPose_;
 
   poseFunc_ = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>(waypointPoseList_);
@@ -128,11 +125,11 @@ void SwingTrajLandingSearch::updatePitch(double pitch)
 void SwingTrajLandingSearch::updatePosXZ(double x_offset, double z_offset)
 {
   const sva::PTransformd newEndPose = sva::PTransformd(Eigen::Vector3d(x_offset, 0., 0.)) * endPose_;
-  endPose_ = newEndPose;
   
-  std::next(waypointPoseList_.rbegin(), 2)->second = sva::PTransformd((config_.approachOffset + Eigen::Vector3d(0., 0., z_offset)).eval()) * endPose_;
-  std::next(waypointPoseList_.rbegin(), 1)->second = sva::PTransformd((config_.approachOffset + Eigen::Vector3d(0., 0., z_offset)).eval()) * endPose_;
-  std::next(waypointPoseList_.rbegin(), 0)->second = endPose_;
+  std::next(waypointPoseList_.rbegin(), 2)->second = sva::PTransformd((config_.approachOffset).eval()) * newEndPose;
+  std::next(waypointPoseList_.rbegin(), 1)->second = sva::PTransformd((config_.approachOffset).eval()) * newEndPose;
+  std::next(waypointPoseList_.rbegin(), 0)->second = sva::PTransformd(Eigen::Vector3d(x_offset, 0., z_offset)) * endPose_;
+  endPose_ = std::next(waypointPoseList_.rbegin(), 0)->second;
 
   mc_rtc::log::error("x_offset {} z_offset {}", x_offset, z_offset);
 

@@ -120,7 +120,7 @@ BaselineWalkingController::BaselineWalkingController(mc_rbdyn::RobotModulePtr rm
 
   // Setup anchor
   setDefaultAnchor();
-
+  
   mc_rtc::log::success("[BaselineWalkingController] Constructed.");
 }
 

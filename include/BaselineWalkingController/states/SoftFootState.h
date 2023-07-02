@@ -80,7 +80,7 @@ protected:
 
   double cost_ = 0.0;
   double PhalangesStiffness_ = 0.0;
-  double extra_to_compute_best_position_ = 0.07;
+  double extra_to_compute_best_position_ = 0.04;
 
   // FootData contains data used to estimate the ground profile
   struct FootData
@@ -124,7 +124,9 @@ protected:
   };
 
   // TODO: Ugly hardcoded value
-  double foot_length_ = 0.27742;
+  // double foot_length_ = 0.27742;
+  double foot_length_ = 0.21742;
+  double landing_to_foot_middle_offset_ = 0.0358;
   size_t nr_phalanxes_;
   double phalanx_length_;
 

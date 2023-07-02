@@ -165,8 +165,8 @@ void SoftFootState::start(mc_control::fsm::Controller & _ctl)
   );
 
   // Subscriber for the range sensors
-  right_foot_range_sensor_sub_ = mc_rtc::ROSBridge::get_node_handle()->subscribe("range_sensor/distance", 1, &SoftFootState::rightFRSCallback, this);
-  left_foot_range_sensor_sub_ = mc_rtc::ROSBridge::get_node_handle()->subscribe("range_sensor/distance", 1, &SoftFootState::leftFRSCallback, this);
+  right_foot_range_sensor_sub_ = mc_rtc::ROSBridge::get_node_handle()->subscribe("right_range_sensor/distance", 1, &SoftFootState::rightFRSCallback, this);
+  left_foot_range_sensor_sub_ = mc_rtc::ROSBridge::get_node_handle()->subscribe("left_range_sensor/distance", 1, &SoftFootState::leftFRSCallback, this);
 }
 
 bool SoftFootState::run(mc_control::fsm::Controller & ctl)
@@ -266,9 +266,9 @@ bool SoftFootState::run(mc_control::fsm::Controller & ctl)
   // TODO: Get landing: a bit dirty for the moment
   sva::PTransformd X_0_landing = ctrl.footManager_->swingTraj_->endPose_;
   // If we saw more than the landing pose + half of the foot, we have enough data to perform all the computations
-  if(!foot_data_[current_moving_foot].computation_done && ground.back().x() >= X_0_landing.translation().x() + foot_length_ * 0.5 + extra_to_compute_best_position_)
+  if(!foot_data_[current_moving_foot].computation_done && ground.back().x() >= X_0_landing.translation().x() + landing_to_foot_middle_offset_ + foot_length_ * 0.65 + extra_to_compute_best_position_)
   {
-    mc_rtc::log::success("Accumulated enough data");
+    mc_rtc::log::success("Accumulated enough data for {}", current_moving_foot == Foot::Right ? "right foot" : "left foot");
     // We need to do these steps only one time
     foot_data_[current_moving_foot].computation_done = true;
     // Extract ground segment from ground data
@@ -307,6 +307,10 @@ bool SoftFootState::run(mc_control::fsm::Controller & ctl)
     {
       mc_rtc::log::warning("Too small {} > {}", ground_segment_[current_moving_foot].raw.back().x() - ground_segment_[current_moving_foot].raw.front().x(), foot_length_);
     }
+  }
+  else if(!foot_data_[current_moving_foot].computation_done)
+  {
+    // mc_rtc::log::warning("Accumulating data -> ground.back().x() {} {}", ground.back().x(), X_0_landing.translation().x() + foot_length_ * 0.5 + extra_to_compute_best_position_);
   }
 
   return false;
@@ -428,9 +432,9 @@ void SoftFootState::extractGroundSegment(mc_control::fsm::Controller & ctl, cons
 
   // Find beginning and ending of segment to extract
   const auto begin_iterator = std::find_if(ground.begin(), ground.end(),
-    [&](const Eigen::Vector3d & v) { return v.x() >= landing.x() - foot_length_ * 0.5 - extra_to_compute_best_position_; });
+    [&](const Eigen::Vector3d & v) { return v.x() >= landing.x() + landing_to_foot_middle_offset_ - foot_length_ * 0.5 - extra_to_compute_best_position_; });
   const auto end_iterator = std::find_if(ground.begin(), ground.end(),
-    [&](const Eigen::Vector3d & v) { return v.x() >= landing.x() + foot_length_ * 0.5 + extra_to_compute_best_position_; });
+    [&](const Eigen::Vector3d & v) { return v.x() >= landing.x() + landing_to_foot_middle_offset_ + foot_length_ * 0.5 + extra_to_compute_best_position_; });
   
   // Save the selected segment in raw data of ground segment structure
   // ground_segment_[current_moving_foot].raw.clear();
@@ -707,7 +711,7 @@ void SoftFootState::computeMinMaxAngle(const Foot & current_moving_foot)
     double angle = 0.;
     auto observer = [&angle](const std::vector<double>& x, const double t)
     {
-        angle = x[0] * 180. / M_PI;
+        angle = x[0]; // * 180. / M_PI;
     };
 
     typedef boost::numeric::odeint::runge_kutta_dopri5<std::vector<double>> stepper_type;
@@ -720,7 +724,9 @@ void SoftFootState::computeMinMaxAngle(const Foot & current_moving_foot)
 
     angle = angle / (nr_phalanxes - 1.);
 
-    mc_rtc::log::info("Min/max angle is {}", angle);
+
+    mc_rtc::log::info("KKKKKKKKKKKKKKKKKK {}", k);
+    mc_rtc::log::info("Min/max angle is {} [rad]", angle);
 
     foot_data_[current_moving_foot].min_max_phalanxes_angle = angle;
   }
@@ -744,6 +750,11 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
     const auto end_iterator = std::find_if(ground.begin(), ground.end(),
       [&](const Eigen::Vector3d & v) { return v.x() >= end.x() + 0.01; });
     std::transform(begin_iterator, end_iterator, std::back_inserter(ground_under_phalanx), [](const Eigen::Vector3d & v) { return v; });
+    
+    if(ground_under_phalanx.empty())
+    {
+      return 0.;
+    }
     
     const std::vector<Eigen::Vector3d> convex = computeConvexHull(ground_under_phalanx);
 
@@ -924,7 +935,7 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
     return ret;
   };
 
-  const std::vector<double> position_offsets_x = {0., -0.05, -0.03, -0.01, 0.01, 0.03, 0.05};
+  const std::vector<double> position_offsets_x = {0., -0.03, -0.02, -0.01, 0.01, 0.02, 0.03};
   // const std::vector<double> position_offsets_x = {0.};
   const auto & convex = ground_segment_[current_moving_foot].convex;
   double maximized_distance_between_phalanxes = std::numeric_limits<double>::lowest();
@@ -933,8 +944,8 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
     // Compute landing pos to evaluate
     const sva::PTransformd landing_pos = sva::PTransformd(Eigen::Vector3d(position_offset_x, 0., 0.)) * default_landing_pos;
     // Get min and max foot x
-    const double min_x_foot = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5, 0., 0.)) * landing_pos).translation().x();
-    const double max_x_foot = (sva::PTransformd(Eigen::Vector3d(+foot_length_ * 0.5, 0., 0.)) * landing_pos).translation().x();   
+    const double min_x_foot = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + landing_to_foot_middle_offset_ , 0., 0.)) * landing_pos).translation().x();
+    const double max_x_foot = (sva::PTransformd(Eigen::Vector3d(+foot_length_ * 0.5 + landing_to_foot_middle_offset_ , 0., 0.)) * landing_pos).translation().x();   
     // Find highest point on hull
     Eigen::Vector3d highest_point_on_convex(0., 0., std::numeric_limits<double>::lowest());
     for(const auto & pos: convex)
@@ -949,19 +960,28 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
     // Compute which n-th phalanx will land on the highest point
     size_t n_phalanx = whichPhalanxItIs(landing_pos.translation(), highest_point_on_convex);
     // Keep highest altitude
-    // foot_data_[current_moving_foot].position_offset_z = std::max(foot_data_[current_moving_foot].position_offset_z, highest_point_on_convex.z() + 0.015 - 0.04); // 0.04 is altitude of foot from configuration file
+    foot_data_[current_moving_foot].position_offset_z = std::max(foot_data_[current_moving_foot].position_offset_z, highest_point_on_convex.z());
+    // {
+    //   auto convex_iterator = std::find_if(convex.begin(), convex.end(), [&](const Eigen::Vector3d & v) { return v.x() >= landing_pos.translation().x(); });
+
+    //   const Eigen::Vector3d & p_1 = *convex_iterator;
+    //   foot_data_[current_moving_foot].position_offset_z = p_1.z();
+    // }
+    mc_rtc::log::warning("computeFootLandingPosition position_offset_z {}", foot_data_[current_moving_foot].position_offset_z);
+    mc_rtc::log::warning("computeFootLandingPosition highest_point_on_convex {}", highest_point_on_convex.z());
     // std::cout << "The n-th phalanx is " <<  n_phalanx << std::endl;
     // phalanx_pos is the middle of the phalanx
-    const Eigen::Vector3d phalanx_pos_start = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + n_phalanx * phalanx_length_, 0., 0.)) * landing_pos).translation();
-    const Eigen::Vector3d phalanx_pos_end = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + (n_phalanx + 1) * phalanx_length_, 0., 0.)) * landing_pos).translation();
+    const Eigen::Vector3d phalanx_pos_start = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + landing_to_foot_middle_offset_ + n_phalanx * phalanx_length_, 0., 0.)) * landing_pos).translation();
+    const Eigen::Vector3d phalanx_pos_end = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + landing_to_foot_middle_offset_ + (n_phalanx + 1) * phalanx_length_, 0., 0.)) * landing_pos).translation();
     
+    std::cout << phalanx_pos_start.x() << " " << phalanx_pos_end.x() << std::endl;
     // Compute landing theta at this point for the n-th phalanx
     const double theta = computeThetaBasedOnQhull(phalanx_pos_start, phalanx_pos_end);
     // std::cout << "theta " << theta << std::endl;
     // std::cout << highest_point_on_convex.transpose() << std::endl;
   
     // std::cout << "min_x_foot " << min_x_foot << " max_x_foot " << max_x_foot << std::endl;
-    Eigen::Vector3d phalanx_pos = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + (n_phalanx + 0.5) * phalanx_length_, 0., 0.)) * landing_pos).translation();
+    Eigen::Vector3d phalanx_pos = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + landing_to_foot_middle_offset_ + (n_phalanx + 0.5) * phalanx_length_, 0., 0.)) * landing_pos).translation();
     phalanx_pos.z() = highest_point_on_convex.z();
     // std::cout << "phalanx_pos " << phalanx_pos.transpose() << std::endl;
     // std::cout << "start phalanx " << min_x_foot + phalanx_length_ * n_phalanx << std::endl;
@@ -1208,7 +1228,22 @@ void SoftFootState::computeFootLandingAngle(const Foot & current_moving_foot, co
 
   foot_data_[current_moving_foot].angle = -std::atan(dz / dx);
 
+  Eigen::Vector3d highest_point_on_convex(0., 0., std::numeric_limits<double>::lowest());
+  const double min_x_foot = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + landing_to_foot_middle_offset_ , 0., 0.)) * sva::PTransformd(landing)).translation().x();
+  const double max_x_foot = (sva::PTransformd(Eigen::Vector3d(+foot_length_ * 0.5 + landing_to_foot_middle_offset_ , 0., 0.)) * sva::PTransformd(landing)).translation().x();   
+  for(const auto & pos: convex)
+  {
+    if(pos.x() >= min_x_foot && pos.x() <= max_x_foot && pos.z() > highest_point_on_convex.z())
+    {
+      highest_point_on_convex = pos;
+    }
+  }
+  // Keep highest altitude
+  foot_data_[current_moving_foot].position_offset_z = highest_point_on_convex.z();
+  // foot_data_[current_moving_foot].position_offset_z = p_1.z();
+
   mc_rtc::log::info("angle {} [rad] {} [deg]", foot_data_[current_moving_foot].angle, foot_data_[current_moving_foot].angle * 180. / M_PI);
+  mc_rtc::log::info("position_offset_z for landing {}", foot_data_[current_moving_foot].position_offset_z);
 }
 
 void SoftFootState::updateFootSwingPose(mc_control::fsm::Controller & ctl, const Foot & current_moving_foot, const sva::PTransformd & X_0_landing)
@@ -1227,6 +1262,10 @@ void SoftFootState::updateFootSwingPose(mc_control::fsm::Controller & ctl, const
   {
     dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosXZ(desired_offset_position_x, desired_offset_position_z);
   }
+  if(!with_foot_adjustment_)
+  {
+    dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosXZ(0, desired_offset_position_z);
+  }
   if(with_ankle_rotation_)
   {
     dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePitch(desired_angle);
@@ -1241,11 +1280,28 @@ void SoftFootState::reset(mc_control::fsm::Controller & ctl, const Foot & foot)
   foot_data_[foot].min_max_phalanxes_angle = 0.;
   foot_data_[foot].position_offset_x = 0.;
   foot_data_[foot].position_offset_z = 0.;
-  foot_data_[foot].k = 0.;
+  
+  if(ctl.robot().hasJoint("L_VARSTIFF"))
+  {
+    auto angleToStiffness = [this](double angle) 
+      {
+        double angle_low = 0;
+        double angle_high = 1;
+        double stiffness_low = 0;
+        double stiffness_high = 100;
+        return stiffness_low+(angle-angle_low)*(stiffness_high-stiffness_low)/(angle_high-angle_low);
+      };
+    foot_data_[foot].k = angleToStiffness(ctl.robot().q()[ctl.robot().jointIndexByName(foot == Foot::Left ? "L_VARSTIFF" : "R_VARSTIFF")][0]);
+  }
+  else
+  {
+    foot_data_[foot].k = 0.;
+  }
+
   // Delete all the data that are behind the foot
   const auto X_0_p = ctl.robot().surfacePose(surface_name_[foot]);
   auto & ground = foot_data_[foot].ground;
-  const auto ground_iterator = std::find_if(ground.begin(), ground.end(), [&](const Eigen::Vector3d & v) { return v.x() >= X_0_p.translation().x() - 0.5 * foot_length_ - extra_to_compute_best_position_; });
+  const auto ground_iterator = std::find_if(ground.begin(), ground.end(), [&](const Eigen::Vector3d & v) { return v.x() >= X_0_p.translation().x() + landing_to_foot_middle_offset_ - 0.65 * foot_length_ - extra_to_compute_best_position_; });
   // Delete from the beginning of the vector up to the back part of the foot
   ground.erase(ground.begin(), ground_iterator);
   
