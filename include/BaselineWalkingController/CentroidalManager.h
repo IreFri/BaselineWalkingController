@@ -120,6 +120,16 @@ public:
   /** \brief Set anchor frame. */
   void setAnchorFrame();
 
+  void enable()
+  {
+    enabled_ = true;
+  }
+  
+  void disable()
+  {
+    enabled_ = false;
+  }
+
 public:
   /** \brief Const accessor to the controller. */
   inline const BaselineWalkingController & ctl() const
@@ -198,5 +208,9 @@ public:
 
   //! Contact list
   std::unordered_map<Foot, std::shared_ptr<ForceColl::Contact>> contactList_;
+
+  bool enabled_ = true;
+
+  bool wasInTheAir_ = false;
 };
 } // namespace BWC

@@ -118,6 +118,32 @@ BaselineWalkingController::BaselineWalkingController(mc_rbdyn::RobotModulePtr rm
     mc_rtc::log::warning("[BaselineWalkingController] CentroidalManager configuration is missing.");
   }
 
+  gui()->addElement({}, mc_rtc::gui::Button("Disbale Stabilization",
+    [this]()
+    {
+      mc_rtc::log::info("Disable Stabilization");
+      for(const auto & foot : Feet::Both)
+      {
+        footTasks_.at(foot)->hold(true);
+      }
+      footManager_->disable();
+      centroidalManager_->disable();
+    }));
+
+  gui()->addElement({}, mc_rtc::gui::Button("Enable Stabilization",
+    [this]()
+    {
+      mc_rtc::log::info("Enable Stabilization");
+      for(const auto & foot : Feet::Both)
+      {
+        footTasks_.at(foot)->hold(false);
+      }
+      footManager_->reset();
+      centroidalManager_->reset();
+      footManager_->enable();
+      centroidalManager_->enable();
+    }));
+
   // Setup anchor
   setDefaultAnchor();
   

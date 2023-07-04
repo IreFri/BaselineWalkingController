@@ -177,6 +177,12 @@ void FootManager::reset()
 
 void FootManager::update()
 {
+  // Check if enable
+  if(!enabled_)
+  {
+    return;
+  }
+
   updateFootTraj();
   updateZmpTraj();
   if(velModeData_.enabled_)
@@ -451,6 +457,11 @@ Eigen::Vector3d FootManager::clampDeltaTrans(const Eigen::Vector3d & deltaTrans,
 
 Eigen::Vector3d FootManager::calcRefZmp(double t, int derivOrder) const
 {
+  if(!enabled_)
+  {
+    return Eigen::Vector3d::Zero();
+  }
+
   if(derivOrder == 0)
   {
     return (*zmpFunc_)(t);
@@ -463,6 +474,11 @@ Eigen::Vector3d FootManager::calcRefZmp(double t, int derivOrder) const
 
 double FootManager::calcRefGroundPosZ(double t, int derivOrder) const
 {
+  if(!enabled_)
+  {
+    return 0.;
+  }
+
   if(derivOrder == 0)
   {
     return (*groundPosZFunc_)(t);
@@ -936,7 +952,7 @@ void FootManager::updateFootTraj()
         const auto & targetFootPose = targetFootPoses_.at(swingFootstep_->foot);
         targetFootPoses_.at(swingFootstep_->foot) = sva::PTransformd(Eigen::Matrix3d::Identity(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), 0.));
         // targetFootPoses_.at(swingFootstep_->foot) = sva::PTransformd(targetFootPose.rotation(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), 0.));
-        mc_rtc::log::error("YEEESSSSSSSSSSSSSSSSSSSSSSS");
+        // mc_rtc::log::error("YEEESSSSSSSSSSSSSSSSSSSSSSS");
       }
       targetFootVels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
       targetFootAccels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();

@@ -45,6 +45,33 @@ void CentroidalManager::reset()
 
 void CentroidalManager::update()
 {
+  // Check if enable
+  if(!enabled_)
+  {
+    return;
+  }
+
+  // Check if the robot is in the air
+  bool isInTheAir = true;
+  for(const auto & foot : Feet::Both)
+  {
+    isInTheAir = isInTheAir && ctl().footTasks_.at(foot)->measuredWrench().force().z() < 10;
+  }
+  
+  if(isInTheAir)
+  {
+    mc_rtc::log::warning("Robot is in the air");
+    ctl().footManager_->disable();
+    wasInTheAir_ = true;
+    return;
+  }
+  else if(wasInTheAir_)
+  {
+    ctl().footManager_->reset();
+    ctl().footManager_->enable();
+    wasInTheAir_ = false;
+  }
+  
   // Set MPC state
   if(config().useActualStateForMpc)
   {
@@ -181,6 +208,178 @@ void CentroidalManager::addToGUI(mc_rtc::gui::StateBuilder & gui)
       mc_rtc::gui::Checkbox(
           "useActualComForWrenchDist", [this]() { return config().useActualComForWrenchDist; },
           [this]() { config().useActualComForWrenchDist = !config().useActualComForWrenchDist; }));
+
+    using Style = mc_rtc::gui::plot::Style;
+    using Side = mc_rtc::gui::plot::Side;
+    gui.addElement({ctl().name(), config().name, "Debug"}, mc_rtc::gui::ElementsStacking::Horizontal,
+      mc_rtc::gui::Button("Plot DCM-ZMP Tracking (x)",
+            [this, &gui]()
+            {
+              gui.addPlot(
+                  "DCM-ZMP Tracking (x)", mc_rtc::gui::plot::X("t", [this]() { static double t = 0.; return t += ctl().solver().dt(); }),
+                  mc_rtc::gui::plot::Y(
+                      "support_min",
+                      [this]()
+                      {
+                        Eigen::Vector2d minPos = Eigen::Vector2d::Constant(std::numeric_limits<double>::max());
+                        for(const auto & contactKV : contactList_)
+                        {
+                          for(const auto & vertexWithRidge : contactKV.second->vertexWithRidgeList_)
+                          {
+                            minPos = minPos.cwiseMin(vertexWithRidge.vertex.head<2>());
+                          }
+                        }
+                        return minPos.x();
+                      }, mc_rtc::gui::Color::Red),
+                  mc_rtc::gui::plot::Y(
+                      "support_max",
+                      [this]()
+                      {
+                        Eigen::Vector2d maxPos = Eigen::Vector2d::Constant(std::numeric_limits<double>::lowest());
+                        for(const auto & contactKV : contactList_)
+                        {
+                          for(const auto & vertexWithRidge : contactKV.second->vertexWithRidgeList_)
+                          {
+                            maxPos = maxPos.cwiseMax(vertexWithRidge.vertex.head<2>());
+                          }
+                        }
+                        return maxPos.x();
+                      }, mc_rtc::gui::Color::Red),
+                  mc_rtc::gui::plot::Y(
+                      "refZmp", [this]() { return refZmp_.x(); }, mc_rtc::gui::Color::Cyan),
+                  mc_rtc::gui::plot::Y(
+                      "plannedZmp", [this]() { return plannedZmp_.x(); }, mc_rtc::gui::Color::Cyan, Style::Dashed),
+                  mc_rtc::gui::plot::Y(
+                      "measuredZmp",
+                      [this]()
+                      {
+                        std::unordered_map<Foot, sva::ForceVecd> sensorWrenchList;
+                        for(const auto & foot : ctl().footManager_->getCurrentContactFeet())
+                        {
+                          const auto & surfaceName = ctl().footManager_->surfaceName(foot);
+                          const auto & sensorName = ctl().robot().indirectSurfaceForceSensor(surfaceName).name();
+                          const auto & sensor = ctl().robot().forceSensor(sensorName);
+                          const auto & sensorWrench = sensor.worldWrenchWithoutGravity(ctl().robot());
+                          sensorWrenchList.emplace(foot, sensorWrench);
+                        }
+                        return calcZmp(sensorWrenchList, refZmp_.z()).x();
+                      }, mc_rtc::gui::Color::Blue, Style::Dashed),
+                  mc_rtc::gui::plot::Y(
+                      "controlZmp", [this]() { return controlZmp_.x(); }, mc_rtc::gui::Color::Blue),
+                  mc_rtc::gui::plot::Y(
+                      "plannedDcm",
+                      [this]()
+                      {
+                        double omega = std::sqrt(plannedForceZ_ / (robotMass_ * (mpcCom_.z() - refZmp_.z())));
+                        return (ctl().comTask_->com() + ctl().comTask_->refVel() / omega).x();
+                      }, mc_rtc::gui::Color::Magenta, Style::Solid, Side::Left),
+                  mc_rtc::gui::plot::Y(
+                      "actualDcm",
+                      [this]()
+                      {
+                        double omega = std::sqrt(plannedForceZ_ / (robotMass_ * (mpcCom_.z() - refZmp_.z())));
+                        return (ctl().realRobot().com() + ctl().realRobot().comVelocity() / omega).x();
+                      }, mc_rtc::gui::Color::Magenta, Style::Dashed, Side::Left)
+              );
+            }),
+      mc_rtc::gui::Button("Stop DCM-ZMP (x)", [&gui]() { gui.removePlot("DCM-ZMP Tracking (x)"); }));
+
+  gui.addElement({ctl().name(), config().name, "Debug"}, mc_rtc::gui::ElementsStacking::Horizontal,
+      mc_rtc::gui::Button("Plot DCM-ZMP Tracking (y)",
+            [this, &gui]()
+            {
+              gui.addPlot(
+                  "DCM-ZMP Tracking (y)", mc_rtc::gui::plot::X("t", [this]() { static double t = 0.; return t += ctl().solver().dt(); }),
+                  mc_rtc::gui::plot::Y(
+                      "support_min",
+                      [this]()
+                      {
+                        Eigen::Vector2d minPos = Eigen::Vector2d::Constant(std::numeric_limits<double>::max());
+                        for(const auto & contactKV : contactList_)
+                        {
+                          for(const auto & vertexWithRidge : contactKV.second->vertexWithRidgeList_)
+                          {
+                            minPos = minPos.cwiseMin(vertexWithRidge.vertex.head<2>());
+                          }
+                        }
+                        return minPos.y();
+                      }, mc_rtc::gui::Color::Red),
+                  mc_rtc::gui::plot::Y(
+                      "support_max",
+                      [this]()
+                      {
+                        Eigen::Vector2d maxPos = Eigen::Vector2d::Constant(std::numeric_limits<double>::lowest());
+                        for(const auto & contactKV : contactList_)
+                        {
+                          for(const auto & vertexWithRidge : contactKV.second->vertexWithRidgeList_)
+                          {
+                            maxPos = maxPos.cwiseMax(vertexWithRidge.vertex.head<2>());
+                          }
+                        }
+                        return maxPos.y();
+                      }, mc_rtc::gui::Color::Red),
+                  mc_rtc::gui::plot::Y(
+                      "refZmp", [this]() { return refZmp_.y(); }, mc_rtc::gui::Color::Cyan),
+                  mc_rtc::gui::plot::Y(
+                      "plannedZmp", [this]() { return plannedZmp_.y(); }, mc_rtc::gui::Color::Cyan, Style::Dashed),
+                  mc_rtc::gui::plot::Y(
+                      "measuredZmp",
+                      [this]()
+                      {
+                        std::unordered_map<Foot, sva::ForceVecd> sensorWrenchList;
+                        for(const auto & foot : ctl().footManager_->getCurrentContactFeet())
+                        {
+                          const auto & surfaceName = ctl().footManager_->surfaceName(foot);
+                          const auto & sensorName = ctl().robot().indirectSurfaceForceSensor(surfaceName).name();
+                          const auto & sensor = ctl().robot().forceSensor(sensorName);
+                          const auto & sensorWrench = sensor.worldWrenchWithoutGravity(ctl().robot());
+                          sensorWrenchList.emplace(foot, sensorWrench);
+                        }
+                        return calcZmp(sensorWrenchList, refZmp_.z()).y();
+                      }, mc_rtc::gui::Color::Blue, Style::Dashed),
+                  mc_rtc::gui::plot::Y(
+                      "controlZmp", [this]() { return controlZmp_.y(); }, mc_rtc::gui::Color::Blue),
+                  mc_rtc::gui::plot::Y(
+                      "plannedDcm",
+                      [this]()
+                      {
+                        double omega = std::sqrt(plannedForceZ_ / (robotMass_ * (mpcCom_.z() - refZmp_.z())));
+                        return (ctl().comTask_->com() + ctl().comTask_->refVel() / omega).y();
+                      }, mc_rtc::gui::Color::Magenta, Style::Solid, Side::Left),
+                  mc_rtc::gui::plot::Y(
+                      "actualDcm",
+                      [this]()
+                      {
+                        double omega = std::sqrt(plannedForceZ_ / (robotMass_ * (mpcCom_.z() - refZmp_.z())));
+                        return (ctl().realRobot().com() + ctl().realRobot().comVelocity() / omega).y();
+                      }, mc_rtc::gui::Color::Magenta, Style::Dashed, Side::Left)
+              );
+            }),
+      mc_rtc::gui::Button("Stop DCM-ZMP (y)", [&gui]() { gui.removePlot("DCM-ZMP Tracking (y)"); }));
+
+  gui.addElement({ctl().name(), config().name, "Debug"}, mc_rtc::gui::ElementsStacking::Horizontal,
+      mc_rtc::gui::Button("Plot CoM Tracking (x)",
+            [this, &gui]()
+            {
+              gui.addPlot("CoM Tracking (x)", mc_rtc::gui::plot::X("t", [this]() { static double t = 0.; return t += ctl().solver().dt(); }),
+                mc_rtc::gui::plot::Y(
+                    "com_ref", [this]() { return ctl().robot().com().x(); }, mc_rtc::gui::Color::Red),
+                mc_rtc::gui::plot::Y(
+                    "com_mes", [this]() { return ctl().realRobot().com().x(); }, mc_rtc::gui::Color::Magenta));
+            }),
+      mc_rtc::gui::Button("Stop CoM (x)", [&gui]() { gui.removePlot("CoM Tracking (x)"); }));
+
+  gui.addElement({ctl().name(), config().name, "Debug"}, mc_rtc::gui::ElementsStacking::Horizontal,
+      mc_rtc::gui::Button("Plot CoM Tracking (y)",
+            [this, &gui]()
+            {
+              gui.addPlot("CoM Tracking (y)", mc_rtc::gui::plot::X("t", [this]() { static double t = 0.; return t += ctl().solver().dt(); }),
+              mc_rtc::gui::plot::Y(
+                    "com_ref", [this]() { return ctl().robot().com().y(); }, mc_rtc::gui::Color::Red),
+                mc_rtc::gui::plot::Y(
+                    "com_mes", [this]() { return ctl().realRobot().com().y(); }, mc_rtc::gui::Color::Magenta));
+            }),
+      mc_rtc::gui::Button("Stop CoM (y)", [&gui]() { gui.removePlot("CoM Tracking (y)"); }));
 }
 
 void CentroidalManager::removeFromGUI(mc_rtc::gui::StateBuilder & gui)

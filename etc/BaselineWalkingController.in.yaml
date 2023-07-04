@@ -35,8 +35,8 @@ with_variable_stiffness: false
 states:
   BWC::Initial_:
     base: BWC::Initial
-    configs:
-      autoStartTime: 1.0 
+    # configs:
+    #   autoStartTime: 1.0 
 
   BWC::GuiWalk_:
     base: BWC::GuiWalk
@@ -48,9 +48,9 @@ states:
 
   BWC::SoftFoot_:
     base: BWC::SoftFoot
-    with_ankle_rotation: true
+    with_ankle_rotation: false
     with_foot_adjustment: false
-    nr_phalanx: 1
+    nr_phalanx: 10
     
   BWC::Main_:
     base: Parallel
@@ -455,16 +455,16 @@ robots:
             angular: [0, 0, 0]
       SwingTraj:
         LandingSearch:
-          withdrawDurationRatio: 0.15
-          withdrawOffset: [0, 0, 0.08] # [m]
-          preApproachDurationRatio: 0.08
-          approachDurationRatio: 0.27
-          approachOffset: [0, 0, 0.08] # [m]
+          withdrawDurationRatio: 0.25
+          withdrawOffset: [0, 0, 0.09] # [m]
+          preApproachDurationRatio: 0.05
+          approachDurationRatio: 0.20
+          approachOffset: [0, 0, 0.09] # [m]
 
     CentroidalManager:
       dcmGainP: 2.0 # It must be greater than 1 to be stable
-      comZGainP: 20000.0
-      refComZ: 0.78 # [m] 078
+      # comZGainP: 20000.0
+      refComZ: 0.78 # [m]
       method: PreviewControlZmp
       horizonDuration: 2.0 # [sec]
       horizonDt: 0.002 # [sec]
@@ -493,9 +493,9 @@ robots:
           translation: [0, -0.080, 0] # [m]
       footstepDuration: 1.6 # [sec]
       doubleSupportRatio: 0.2 # []
-      zmpOffset: [0, -0.02, 0] # (positive for x-forward, y-outside, z-upward) [m]
+      zmpOffset: [0.0, -0.02, 0] # (positive for x-forward, y-outside, z-upward) [m]
       defaultSwingTrajType: LandingSearch
-      touchDownForceZ: 200 # [N]
+      touchDownForceZ: 130 # [N]
       overwriteLandingPose: false
       stopSwingTrajForTouchDownFoot: true
       keepPoseForTouchDownFoot: false
@@ -542,7 +542,7 @@ robots:
     CentroidalManager:
       dcmGainP: 2.0 # It must be greater than 1 to be stable
       comZGainP: 20000.0
-      refComZ: 0.82 # [m]
+      refComZ: 0.80 # [m]
       method: PreviewControlZmp
       horizonDuration: 2.0 # [sec]
       horizonDt: 0.002 # [sec]

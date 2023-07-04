@@ -344,6 +344,16 @@ public:
     return velModeData_.enabled_;
   }
 
+  void enable()
+  {
+    enabled_ = true;
+  }
+  
+  void disable()
+  {
+    enabled_ = false;
+  }
+
 protected:
   /** \brief Const accessor to the controller. */
   inline const BaselineWalkingController & ctl() const
@@ -443,5 +453,7 @@ public:
 
   //! Whether to require updating impedance gains for foot tasks
   bool requireImpGainUpdate_ = true;
+
+  bool enabled_ = true;
 };
 } // namespace BWC
