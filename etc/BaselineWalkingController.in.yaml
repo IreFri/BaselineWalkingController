@@ -50,7 +50,7 @@ states:
     base: BWC::SoftFoot
     with_ankle_rotation: false
     with_foot_adjustment: false
-    nr_phalanx: 10
+    nr_phalanx: 1
     
   BWC::Main_:
     base: Parallel
@@ -435,8 +435,8 @@ robots:
             angular: [1, 1, 0]
         DoubleSupport:
           damper:
-            linear: [300, 300, 2e3] # [300, 300, 2e3]
-            angular: [40, 40, 100]
+            linear: [300, 300, 1e4] # [300, 300, 2e3]
+            angular: [100, 100, 100]
           spring:
             linear: [2250, 2250, 0] # [2250, 2250, 0]
             angular: [0, 0, 2000]

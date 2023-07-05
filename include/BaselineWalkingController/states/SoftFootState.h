@@ -124,9 +124,10 @@ protected:
   };
 
   // TODO: Ugly hardcoded value
-  // double foot_length_ = 0.27742;
-  double foot_length_ = 0.21742;
-  double landing_to_foot_middle_offset_ = 0.0358;
+  // double foot_length_ = 0.27742; // For SoftFoot
+  double foot_length_ = 0.25848;  // For FlatFoot
+  double landing_to_foot_middle_offset_ = 0.0358; // For SoftFoot
+  // double landing_to_foot_middle_offset_ = 0.???; // For FlatFoot
   size_t nr_phalanxes_;
   double phalanx_length_;
 

@@ -11,7 +11,7 @@ void GuiWalkState::start(mc_control::fsm::Controller & _ctl)
   State::start(_ctl);
 
   // Forcefully start the walk without inout
-  ctl().footManager_->walkToRelativePose(Eigen::Vector3d(14., 0., 0.), 0);
+  // ctl().footManager_->walkToRelativePose(Eigen::Vector3d(14., 0., 0.), 0);
   
   // Setup GUI
   ctl().gui()->addElement({ctl().name(), "GuiWalk"},

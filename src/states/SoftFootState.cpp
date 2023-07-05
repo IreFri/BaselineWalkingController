@@ -1270,6 +1270,33 @@ void SoftFootState::updateFootSwingPose(mc_control::fsm::Controller & ctl, const
   {
     dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePitch(desired_angle);
   }
+
+  ctrl.footManager_->phalanxes_altitude_[current_moving_foot].clear();
+
+  // Front part of the foot
+  double front_part_foot_x = X_0_landing.translation().x() + landing_to_foot_middle_offset_ + foot_length_ * 0.5;
+  // Back part of the foot
+  const double back_part_foot_x = X_0_landing.translation().x() + landing_to_foot_middle_offset_ - foot_length_ * 0.5;
+  
+  const double phalanx_length = (front_part_foot_x - back_part_foot_x) / nr_phalanxes_;
+
+  double max_under = std::numeric_limits<double>::lowest();
+  for(size_t i = ground_segment_[current_moving_foot].filtered.size() - 1; i > 0; i--)
+  {
+    const auto & v = ground_segment_[current_moving_foot].filtered[i];
+    if(v.x() < front_part_foot_x && v.x() > front_part_foot_x - phalanx_length)
+    {
+      max_under = std::max(max_under, v.z());
+    }
+    else if(v.x() < front_part_foot_x - phalanx_length)
+    {
+      mc_rtc::log::warning("max under phalanx {}", max_under);
+      ctrl.footManager_->phalanxes_altitude_[current_moving_foot].push_back(max_under);
+      front_part_foot_x -= phalanx_length;
+      max_under = std::numeric_limits<double>::lowest();
+    }
+  }
+
 }
 
 

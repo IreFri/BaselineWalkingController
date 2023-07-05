@@ -455,5 +455,7 @@ public:
   bool requireImpGainUpdate_ = true;
 
   bool enabled_ = true;
+  //! For SoftFootState
+  std::unordered_map<Foot, std::vector<double>> phalanxes_altitude_;
 };
 } // namespace BWC

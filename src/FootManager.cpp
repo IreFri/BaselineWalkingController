@@ -160,6 +160,7 @@ void FootManager::reset()
   for(const auto & foot : Feet::Both)
   {
     impGainTypes_.emplace(foot, "DoubleSupport");
+    phalanxes_altitude_.emplace(foot, std::vector<double>{});
   }
 
   requireImpGainUpdate_ = true;
@@ -901,9 +902,10 @@ void FootManager::updateFootTraj()
       footTaskGains_.at(swingFootstep_->foot) = swingTraj_->taskGain(ctl().t());
     }
 
+
     // Update height of support foot
     {
-      auto heightEstimation = [](mc_control::fsm::Controller & ctl, const Foot & current_support_foot)
+      auto heightEstimation = [this](mc_control::fsm::Controller & ctl, const Foot & current_support_foot)
       {
         // Estimation variation foot height
         const double a = 0.08687;
@@ -919,10 +921,24 @@ void FootManager::updateFootTraj()
         const std::string frontal_arch_joint_name = current_support_foot == Foot::Left ? "L_FRONTAL_ARCH" : "R_FRONTAL_ARCH";
         const auto rjo = ctl.robot().refJointOrder();
         const size_t joint_index = std::find(rjo.cbegin(), rjo.cend(), frontal_arch_joint_name) - rjo.cbegin();
-        const double encoder = 0.02156203685837307 - ctl.robot().encoderValues()[joint_index];
+        const double encoder = 0. + ctl.robot().encoderValues()[joint_index];
+        const double default_encoder = ctl.robot().encoderValues()[joint_index];
         
         double height_variation = -(b * std::cos(encoder + beta - ankle_pitch) - a * std::cos(alpha));
-        mc_rtc::log::error("Height estimation for supporting foot {} encoder {} ankle_pitch {}", height_variation, encoder, ankle_pitch);
+        
+        if (phalanxes_altitude_[current_support_foot].size() > 8)
+        {
+          const auto & pa = phalanxes_altitude_[current_support_foot];
+          // Check if frontal and back phalanxes have the same heights
+          const double front_max = std::max(pa[0], std::max(pa[1], pa[2]));
+          const double back_max = std::max(pa[pa.size()-1], std::max(pa[pa.size()-2], pa[pa.size()-3]));
+          if(back_max > 0.01 && front_max > 0.01 && std::abs(back_max - front_max) < 0.01)
+          {
+            mc_rtc::log::warning("I am flat with {} {}", front_max, back_max);
+            height_variation += (back_max + front_max) * 0.5;
+          }
+        }
+        mc_rtc::log::error("Height estimation for supporting foot {} -> {}", frontal_arch_joint_name, height_variation);
         
         return height_variation;
       };
@@ -933,7 +949,11 @@ void FootManager::updateFootTraj()
         const double estimated_height = heightEstimation(ctl(), support_foot);
 
         const auto & targetFootPose = targetFootPoses_.at(support_foot);
-        targetFootPoses_.at(support_foot) = sva::PTransformd(Eigen::Matrix3d::Identity(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), estimated_height));
+        // targetFootPoses_.at(support_foot) = sva::PTransformd(Eigen::Matrix3d::Identity(),
+        //   Eigen::Vector3d(targetFootPose.translation().x(),
+        //                   targetFootPose.translation().y(),
+        //                   // Filter the variation in height
+        //                   (1 - 0.05) * targetFootPose.translation().z() + 0.05 * estimated_height));
       }
     }
   }
@@ -952,7 +972,6 @@ void FootManager::updateFootTraj()
         const auto & targetFootPose = targetFootPoses_.at(swingFootstep_->foot);
         targetFootPoses_.at(swingFootstep_->foot) = sva::PTransformd(Eigen::Matrix3d::Identity(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), 0.));
         // targetFootPoses_.at(swingFootstep_->foot) = sva::PTransformd(targetFootPose.rotation(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), 0.));
-        // mc_rtc::log::error("YEEESSSSSSSSSSSSSSSSSSSSSSS");
       }
       targetFootVels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
       targetFootAccels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
