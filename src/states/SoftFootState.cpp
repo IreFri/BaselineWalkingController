@@ -234,6 +234,7 @@ bool SoftFootState::run(mc_control::fsm::Controller & ctl)
       ctl.logger().addLogEntry("MyMeasures_" + name + "_range", [this, foot]() { return foot_data_[foot].range;} );
       ctl.logger().addLogEntry("MyMeasures_" + name + "_k", [this, foot]() { return foot_data_[foot].k;} );
       ctl.logger().addLogEntry("MyMeasures_" + name + "_angle", [this, foot]() { return foot_data_[foot].angle;} );
+      ctl.logger().addLogEntry("MyMeasures_" + name + "_position_offset_z", [this, foot]() { return foot_data_[foot].position_offset_z;} );
       ctl.logger().addLogEntry("MyMeasures_" + name + "_min_max_phalanxes_angle", [this, foot]() { return foot_data_[foot].min_max_phalanxes_angle;} );
       ctl.logger().addLogEntry("MyMeasures_" + name + "_position_offset", [this, foot]() { return foot_data_[foot].position_offset_x;} );
       ctl.logger().addLogEntry("MyMeasures_" + name + "_phalanxes_x", [this, foot]()
@@ -935,7 +936,7 @@ void SoftFootState::computeFootLandingPosition(const Foot & current_moving_foot,
     return ret;
   };
 
-  const std::vector<double> position_offsets_x = {0., -0.03, -0.02, -0.01, 0.01, 0.02, 0.03};
+  const std::vector<double> position_offsets_x = {0., -0.015, -0.01, -0.005, 0.005, 0.01, 0.015};
   // const std::vector<double> position_offsets_x = {0.};
   const auto & convex = ground_segment_[current_moving_foot].convex;
   double maximized_distance_between_phalanxes = std::numeric_limits<double>::lowest();
@@ -1226,7 +1227,20 @@ void SoftFootState::computeFootLandingAngle(const Foot & current_moving_foot, co
   double dz = p_1.z() - p_0.z();
   double dx = p_1.x() - p_0.x();
 
+  const double bound_for_angle = 25. * M_PI / 180.; // [rad]
+  // foot_data_[current_moving_foot].angle = std::max(std::min(-std::atan(dz / dx), bound_for_angle), -bound_for_angle);
+
   foot_data_[current_moving_foot].angle = -std::atan(dz / dx);
+  if(foot_data_[current_moving_foot].angle < -bound_for_angle)
+  {
+    mc_rtc::log::warning("[SoftFootState::computeFootLandingAngle] Clamp computed angle {} to {}", foot_data_[current_moving_foot].angle, -bound_for_angle);
+    foot_data_[current_moving_foot].angle = -bound_for_angle;
+  }
+  else if(foot_data_[current_moving_foot].angle > bound_for_angle)
+  {
+    mc_rtc::log::warning("[SoftFootState::computeFootLandingAngle] Clamp computed angle {} to {}", foot_data_[current_moving_foot].angle, bound_for_angle);
+    foot_data_[current_moving_foot].angle = bound_for_angle;
+  }
 
   Eigen::Vector3d highest_point_on_convex(0., 0., std::numeric_limits<double>::lowest());
   const double min_x_foot = (sva::PTransformd(Eigen::Vector3d(-foot_length_ * 0.5 + landing_to_foot_middle_offset_ , 0., 0.)) * sva::PTransformd(landing)).translation().x();
@@ -1258,17 +1272,36 @@ void SoftFootState::updateFootSwingPose(mc_control::fsm::Controller & ctl, const
   
   // Follow Murooka-san code to update, sorry for the dirty access
   // The order is important
+  // if(with_foot_adjustment_)
+  // {
+  //   dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosXZ(desired_offset_position_x, desired_offset_position_z);
+  // }
+  // if(!with_foot_adjustment_)
+  // {
+  //   dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosXZ(0, desired_offset_position_z);
+  // }
+  // if(with_ankle_rotation_)
+  // {
+  //   dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePitch(desired_angle);
+  // }
+
   if(with_foot_adjustment_)
   {
-    dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosXZ(desired_offset_position_x, desired_offset_position_z);
+    mc_rtc::log::info("[SoftFootState] position_offset_x for landing {}", foot_data_[current_moving_foot].position_offset_x);
+    mc_rtc::log::info("[SoftFootState] position_offset_z for landing {}", foot_data_[current_moving_foot].position_offset_z);
+    ctrl.footManager_->swingTraj_->updatePosXZ(desired_offset_position_x, desired_offset_position_z);
+    if(with_ankle_rotation_)
+    {
+      mc_rtc::log::info("[SoftFootState] angle {} [rad] {} [deg]", foot_data_[current_moving_foot].angle, foot_data_[current_moving_foot].angle * 180. / M_PI);
+      ctrl.footManager_->swingTraj_->updatePitch(desired_angle);
+    }
   }
-  if(!with_foot_adjustment_)
+  else if(!with_foot_adjustment_ && with_ankle_rotation_)
   {
-    dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosXZ(0, desired_offset_position_z);
-  }
-  if(with_ankle_rotation_)
-  {
-    dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePitch(desired_angle);
+    mc_rtc::log::info("[SoftFootState] position_offset_z for landing {}", foot_data_[current_moving_foot].position_offset_z);
+    ctrl.footManager_->swingTraj_->updatePosXZ(0, desired_offset_position_z);
+    mc_rtc::log::info("[SoftFootState] angle {} [rad] {} [deg]", foot_data_[current_moving_foot].angle, foot_data_[current_moving_foot].angle * 180. / M_PI);
+    ctrl.footManager_->swingTraj_->updatePitch(desired_angle);
   }
 
   ctrl.footManager_->phalanxes_altitude_[current_moving_foot].clear();
@@ -1354,6 +1387,7 @@ void SoftFootState::reset(mc_control::fsm::Controller & ctl, const Foot & foot)
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_convex_y");
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_k");
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_angle");
+  ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_position_offset_z");
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_min_max_phalanxes_angle");
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_position_offset");
   ctl.logger().removeLogEntry("MyMeasures_" + other_name + "_phalanxes_x");

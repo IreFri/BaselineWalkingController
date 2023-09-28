@@ -50,7 +50,7 @@ states:
     base: BWC::SoftFoot
     with_ankle_rotation: false
     with_foot_adjustment: false
-    nr_phalanx: 1
+    nr_phalanx: 10
     
   BWC::Main_:
     base: Parallel
@@ -410,13 +410,13 @@ robots:
     FootManager:
       midToFootTranss:
         Left:
-          translation: [0, 0.10, 0]
+          translation: [0, 0.1, 0]
         Right:
-          translation: [0, -0.10, 0]
+          translation: [0, -0.1, 0]
       footstepDuration: 2.0 # [sec] 2.0 
       doubleSupportRatio: 0.1 # [] 0.2
-      zmpOffset: [0, -0.01, 0] # (positive for x-forward, y-outside, z-upward) [m]
-      defaultSwingTrajType: LandingSearch
+      zmpOffset: [0, -0.0, 0] # (positive for x-forward, y-outside, z-upward) [m]
+      defaultSwingTrajType: CubicSplineSimple
       overwriteLandingPose: false
       stopSwingTrajForTouchDownFoot: false
       keepPoseForTouchDownFoot: false
@@ -460,6 +460,13 @@ robots:
           preApproachDurationRatio: 0.05
           approachDurationRatio: 0.20
           approachOffset: [0, 0, 0.09] # [m]
+        CubicSplineSimple:
+          withdrawDurationRatio: 0.2
+          withdrawOffset: [0, 0, 0.06] # [m]
+          preApproachDurationRatio: 0.25
+          swingOffset: [0, 0, 0.09] # [m]
+          approachDurationRatio: 0.2
+          approachOffset: [0, 0, 0.06] # [m]
 
     CentroidalManager:
       dcmGainP: 2.0 # It must be greater than 1 to be stable

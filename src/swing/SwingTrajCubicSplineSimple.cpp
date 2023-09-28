@@ -63,6 +63,9 @@ SwingTrajCubicSplineSimple::SwingTrajCubicSplineSimple(const sva::PTransformd & 
 {
   config_.load(mcRtcConfig);
 
+  posFunc_->clearFuncs();
+  rotFunc_->clearPoints();
+
   double withdrawDuration = config_.withdrawDurationRatio * (endTime_ - startTime_);
   double approachDuration = config_.approachDurationRatio * (endTime_ - startTime_);
 
@@ -117,12 +120,69 @@ SwingTrajCubicSplineSimple::SwingTrajCubicSplineSimple(const sva::PTransformd & 
   rotFunc_->calcCoeff();
 }
 
+void SwingTrajCubicSplineSimple::updatePitch(double pitch)
+{
+  Eigen::Matrix3d rotOffset = mc_rbdyn::rpyToMat(Eigen::Vector3d(0., pitch, 0.));
+  endPose_ = sva::PTransformd(rotOffset) * endPose_;
+  compute();
+}
+
+void SwingTrajCubicSplineSimple::updatePosXZ(double x_offset, double z_offset)
+{
+  const sva::PTransformd newEndPose = sva::PTransformd(Eigen::Vector3d(x_offset, 0., z_offset)) * endPose_;
+  endPose_ = newEndPose;
+  compute();
+}
+
+void SwingTrajCubicSplineSimple::compute()
+{
+  // Keep current timing
+  // t_ = t; in pose/vel/accel
+
+  // Get current pose on the trajectory
+  std::cout << "Update with: " << t_ << std::endl;
+  std::cout << "endTime_: " << endTime_ << std::endl;
+  
+  const sva::PTransformd X_0_P((*rotFunc_)(t_).transpose(), (*posFunc_)(t_));
+  
+  std::cout << (*posFunc_)(t_).transpose() << std::endl;
+  
+  const Eigen::Vector3d V_0_P = posFunc_->derivative(t_, 1);
+
+  std::cout << V_0_P.transpose() << std::endl;
+
+  // Reset Funcs
+  posFunc_->clearFuncs();
+  rotFunc_->clearPoints();
+
+  std::map<double, Eigen::Vector3d> approachPosWaypoints = {
+    {t_, X_0_P.translation()}, // Current pos at current time t_
+    {endTime_, endPose_.translation()}};
+
+  auto approachPosSpline = std::make_shared<TrajColl::CubicSpline<Eigen::Vector3d>>(
+    3,
+    TrajColl::BoundaryConstraint<Eigen::Vector3d>(TrajColl::BoundaryConstraintType::Velocity, V_0_P),
+    TrajColl::BoundaryConstraint<Eigen::Vector3d>(TrajColl::BoundaryConstraintType::Velocity, Eigen::Vector3d::Zero()),
+    approachPosWaypoints);
+
+  // We need to update both Func (pos and rot)
+  approachPosSpline->calcCoeff();
+  posFunc_->appendFunc(endTime_, approachPosSpline);
+  // Rot
+  rotFunc_->appendPoint(std::make_pair(t_, X_0_P.rotation().transpose()));
+  rotFunc_->appendPoint(std::make_pair(endTime_, endPose_.rotation().transpose()));
+  rotFunc_->calcCoeff();
+
+  std::cout << (*posFunc_)(t_).transpose() << std::endl;
+}
+
 sva::PTransformd SwingTrajCubicSplineSimple::pose(double t) const
 {
   if(touchDownTime_ > 0 && t >= touchDownTime_)
   {
     t = touchDownTime_;
   }
+  t_ = t;
   return sva::PTransformd((*rotFunc_)(t).transpose(), (*posFunc_)(t));
 }
 
@@ -130,10 +190,12 @@ sva::MotionVecd SwingTrajCubicSplineSimple::vel(double t) const
 {
   if(touchDownTime_ > 0 && t >= touchDownTime_)
   {
+    t_ = touchDownTime_;
     return sva::MotionVecd::Zero();
   }
   else
   {
+    t_ = t;
     return sva::MotionVecd(rotFunc_->derivative(t, 1), posFunc_->derivative(t, 1));
   }
 }
@@ -142,10 +204,12 @@ sva::MotionVecd SwingTrajCubicSplineSimple::accel(double t) const
 {
   if(touchDownTime_ > 0 && t >= touchDownTime_)
   {
+    t_ = touchDownTime_;
     return sva::MotionVecd::Zero();
   }
   else
   {
+    t_ = t;
     return sva::MotionVecd(rotFunc_->derivative(t, 2), posFunc_->derivative(t, 2));
   }
 }

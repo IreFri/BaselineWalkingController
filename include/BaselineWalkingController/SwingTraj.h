@@ -54,6 +54,15 @@ public:
   {
   }
 
+  virtual void updatePitch(double pitch)
+  {}
+
+  /** \brief Update the internal state of the swing trajectory.
+      \param x_offset x offset
+  */
+  virtual void updatePosXZ(double x_offset, double z_offset)
+  {}
+
   /** \brief Calculate the pose of the swing trajectory at a specified time.
       \param t time
   */
@@ -108,6 +117,8 @@ public:
 
   //! IK task gain
   TaskGain taskGain_;
+
+  mutable double t_ = 0.;
 
 protected:
   //! Time when touch down is detected (-1 if not detected)
