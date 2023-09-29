@@ -105,14 +105,9 @@ public:
   virtual sva::MotionVecd accel(double t) const override;
 
   /** \brief Update the internal state of the swing trajectory.
-      \param pitch pitch angle
-  */
-  virtual void updatePitch(double pitch) override;
-
-  /** \brief Update the internal state of the swing trajectory.
       \param x_offset x offset
   */
-  virtual void updatePosXZ(double x_offset, double z_offset) override;
+  virtual void update(double pitch, double x_offset, double z_offset) override;
 
   /** \brief Const accessor to the configuration. */
   inline virtual const Configuration & config() const override

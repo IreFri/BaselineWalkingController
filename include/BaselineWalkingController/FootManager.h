@@ -421,6 +421,9 @@ public:
   std::unordered_map<Foot, std::shared_ptr<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>>
       trajStartFootPoseFuncs_;
 
+  std::unordered_map<Foot, std::shared_ptr<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>>
+      afterLandingFootPoseFuncs_;
+
   //! Support phase
   SupportPhase supportPhase_ = SupportPhase::DoubleSupport;
 

@@ -128,6 +128,7 @@ void FootManager::reset()
     targetFootAccels_.emplace(foot, sva::MotionVecd::Zero());
     footTaskGains_.emplace(foot, config_.footTaskGain);
     trajStartFootPoseFuncs_.emplace(foot, nullptr);
+    afterLandingFootPoseFuncs_.emplace(foot, nullptr);
   }
   trajStartFootPoses_ = targetFootPoses_;
 
@@ -890,6 +891,7 @@ void FootManager::updateFootTraj()
       if(config_.stopSwingTrajForTouchDownFoot)
       {
         swingTraj_->touchDown(ctl().t());
+        std::cout << "Stop when contact" << std::endl;
       }
     }
 
@@ -938,7 +940,7 @@ void FootManager::updateFootTraj()
             height_variation += (back_max + front_max) * 0.5;
           }
         }
-        mc_rtc::log::error("Height estimation for supporting foot {} -> {}", frontal_arch_joint_name, height_variation);
+        // mc_rtc::log::error("Height estimation for supporting foot {} -> {}", frontal_arch_joint_name, height_variation);
         
         return height_variation;
       };
@@ -965,13 +967,14 @@ void FootManager::updateFootTraj()
       // Update target
       if(!(config_.keepPoseForTouchDownFoot && touchDown_))
       {
-        targetFootPoses_.at(swingFootstep_->foot) = swingTraj_->endPose_;
+        // targetFootPoses_.at(swingFootstep_->foot) = swingTraj_->endPose_;
 
         // WARN/TODO: A bit ugly, it is to change the pose of the foot used for the computation of the vertex for the surface
         // We can stop the foot mid-air, but because it is soft, the robot is going down
-        const auto & targetFootPose = targetFootPoses_.at(swingFootstep_->foot);
-        targetFootPoses_.at(swingFootstep_->foot) = sva::PTransformd(Eigen::Matrix3d::Identity(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), 0.));
+        // const auto & targetFootPose = targetFootPoses_.at(swingFootstep_->foot);
+        // targetFootPoses_.at(swingFootstep_->foot) = sva::PTransformd(Eigen::Matrix3d::Identity(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), 0.));
         // targetFootPoses_.at(swingFootstep_->foot) = sva::PTransformd(targetFootPose.rotation(), Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), 0.));
+        // std::cout << "Reset foot pose" << std::endl;
       }
       targetFootVels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
       targetFootAccels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
@@ -988,6 +991,22 @@ void FootManager::updateFootTraj()
         trajStartFootPoseFuncs_.at(swingFootstep_->foot) = trajStartFootPoseFunc;
       }
 
+      // Set afterLandingFootPoseFuncs_
+      {
+        const auto & targetFootPose = targetFootPoses_.at(swingFootstep_->foot);
+        auto landingFootPoseFunc = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>();
+        landingFootPoseFunc->appendPoint(std::make_pair(ctl().t(), targetFootPoses_.at(swingFootstep_->foot)));
+        double z = 0.;
+        if(targetFootPose.translation().z() > 0.02)
+        {
+          z = targetFootPose.translation().z() * 0.5;
+        }
+        landingFootPoseFunc->appendPoint(
+            std::make_pair(ctl().t() + 0.25, sva::PTransformd(Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), z))));
+        landingFootPoseFunc->calcCoeff();
+        afterLandingFootPoseFuncs_.at(swingFootstep_->foot) = landingFootPoseFunc;
+      }
+
       // Set supportPhase_
       supportPhase_ = SupportPhase::DoubleSupport;
 
@@ -1002,6 +1021,28 @@ void FootManager::updateFootTraj()
 
       // Clear swingFootstep_
       swingFootstep_ = nullptr;
+    }
+  }
+
+  // Update trajStartFootPoses_
+  for(auto & afterLandingFootPoseFuncKV : afterLandingFootPoseFuncs_)
+  {
+    auto & afterLandingFootPoseFunc = afterLandingFootPoseFuncKV.second;
+    if(!trajStartFootPoseFuncs_.at(afterLandingFootPoseFuncKV.first))
+    {
+      if(!afterLandingFootPoseFunc)
+      {
+        continue;
+      }
+      std::cout << "Update for " << (afterLandingFootPoseFuncKV.first == Foot::Left ? "Left" : "Right") << std::endl;
+      targetFootPoses_.at(afterLandingFootPoseFuncKV.first) =
+          (*afterLandingFootPoseFunc)(std::min(ctl().t(), afterLandingFootPoseFunc->endTime()));
+      std::cout << targetFootPoses_.at(afterLandingFootPoseFuncKV.first).translation().transpose() << std::endl;
+      if(afterLandingFootPoseFunc->endTime() <= ctl().t())
+      {
+        std::cout << "Reset afterLandingFootPoseFuncKV" << std::endl;
+        afterLandingFootPoseFunc.reset();
+      }
     }
   }
 

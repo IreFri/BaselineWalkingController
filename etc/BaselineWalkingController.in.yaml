@@ -48,8 +48,8 @@ states:
 
   BWC::SoftFoot_:
     base: BWC::SoftFoot
-    with_ankle_rotation: false
-    with_foot_adjustment: false
+    with_ankle_rotation: true
+    with_foot_adjustment: true
     nr_phalanx: 10
     
   BWC::Main_:

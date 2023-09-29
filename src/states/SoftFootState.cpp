@@ -1253,7 +1253,7 @@ void SoftFootState::computeFootLandingAngle(const Foot & current_moving_foot, co
     }
   }
   // Keep highest altitude
-  foot_data_[current_moving_foot].position_offset_z = highest_point_on_convex.z();
+  foot_data_[current_moving_foot].position_offset_z = highest_point_on_convex.z() * 0.85;
   // foot_data_[current_moving_foot].position_offset_z = p_1.z();
 
   mc_rtc::log::info("angle {} [rad] {} [deg]", foot_data_[current_moving_foot].angle, foot_data_[current_moving_foot].angle * 180. / M_PI);
@@ -1266,43 +1266,26 @@ void SoftFootState::updateFootSwingPose(mc_control::fsm::Controller & ctl, const
   auto & ctrl = static_cast<BWC::BaselineWalkingController&>(ctl);
   // Get the angle
   double desired_angle = foot_data_[current_moving_foot].angle;
+  if(!with_ankle_rotation_)
+  {
+    desired_angle = 0.;
+  }
   double desired_offset_position_x = foot_data_[current_moving_foot].position_offset_x;
+  if(!with_foot_adjustment_)
+  {
+    desired_offset_position_x = 0.;
+  }
   double desired_offset_position_z = foot_data_[current_moving_foot].position_offset_z;
-  // Dirty access to swing traj
-  
-  // Follow Murooka-san code to update, sorry for the dirty access
-  // The order is important
-  // if(with_foot_adjustment_)
-  // {
-  //   dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosXZ(desired_offset_position_x, desired_offset_position_z);
-  // }
-  // if(!with_foot_adjustment_)
-  // {
-  //   dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePosXZ(0, desired_offset_position_z);
-  // }
-  // if(with_ankle_rotation_)
-  // {
-  //   dynamic_cast<BWC::SwingTrajLandingSearch*>(ctrl.footManager_->swingTraj_.get())->updatePitch(desired_angle);
-  // }
+  if(!with_foot_adjustment_ && !with_ankle_rotation_)
+  {
+    desired_offset_position_z = 0.;
+  }
 
-  if(with_foot_adjustment_)
-  {
-    mc_rtc::log::info("[SoftFootState] position_offset_x for landing {}", foot_data_[current_moving_foot].position_offset_x);
-    mc_rtc::log::info("[SoftFootState] position_offset_z for landing {}", foot_data_[current_moving_foot].position_offset_z);
-    ctrl.footManager_->swingTraj_->updatePosXZ(desired_offset_position_x, desired_offset_position_z);
-    if(with_ankle_rotation_)
-    {
-      mc_rtc::log::info("[SoftFootState] angle {} [rad] {} [deg]", foot_data_[current_moving_foot].angle, foot_data_[current_moving_foot].angle * 180. / M_PI);
-      ctrl.footManager_->swingTraj_->updatePitch(desired_angle);
-    }
-  }
-  else if(!with_foot_adjustment_ && with_ankle_rotation_)
-  {
-    mc_rtc::log::info("[SoftFootState] position_offset_z for landing {}", foot_data_[current_moving_foot].position_offset_z);
-    ctrl.footManager_->swingTraj_->updatePosXZ(0, desired_offset_position_z);
-    mc_rtc::log::info("[SoftFootState] angle {} [rad] {} [deg]", foot_data_[current_moving_foot].angle, foot_data_[current_moving_foot].angle * 180. / M_PI);
-    ctrl.footManager_->swingTraj_->updatePitch(desired_angle);
-  }
+  mc_rtc::log::info("[SoftFootState] position_offset_x for landing {}", desired_offset_position_x);
+  mc_rtc::log::info("[SoftFootState] position_offset_z for landing {}", desired_offset_position_z);
+  mc_rtc::log::info("[SoftFootState] angle {} [rad] {} [deg]", desired_angle, desired_angle * 180. / M_PI);
+
+  ctrl.footManager_->swingTraj_->update(desired_angle, desired_offset_position_x, desired_offset_position_z);
 
   ctrl.footManager_->phalanxes_altitude_[current_moving_foot].clear();
 

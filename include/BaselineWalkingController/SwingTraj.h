@@ -54,13 +54,10 @@ public:
   {
   }
 
-  virtual void updatePitch(double pitch)
-  {}
-
   /** \brief Update the internal state of the swing trajectory.
       \param x_offset x offset
   */
-  virtual void updatePosXZ(double x_offset, double z_offset)
+  virtual void update(double pitch, double x_offset, double z_offset)
   {}
 
   /** \brief Calculate the pose of the swing trajectory at a specified time.
