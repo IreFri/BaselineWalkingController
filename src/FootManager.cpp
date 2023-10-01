@@ -28,6 +28,7 @@ void FootManager::Configuration::load(const mc_rtc::Configuration & mcRtcConfig)
 {
   mcRtcConfig("name", name);
   mcRtcConfig("footstepDuration", footstepDuration);
+  footstepDuration += 0.2;
   mcRtcConfig("doubleSupportRatio", doubleSupportRatio);
   if(mcRtcConfig.has("deltaTransLimit"))
   {
@@ -411,8 +412,8 @@ Footstep FootManager::makeFootstep(const Foot & foot,
                                    const mc_rtc::Configuration & swingTrajConfig) const
 {
   return Footstep(foot, config_.midToFootTranss.at(foot) * footMidpose, startTime,
-                  startTime + 0.5 * config_.doubleSupportRatio * config_.footstepDuration,
-                  startTime + (1.0 - 0.5 * config_.doubleSupportRatio) * config_.footstepDuration,
+                  startTime + 0.5 * config_.doubleSupportRatio * (config_.footstepDuration - 0.2),
+                  startTime + (1.0 - 0.5 * config_.doubleSupportRatio) * (config_.footstepDuration - 0.2),
                   startTime + config_.footstepDuration, swingTrajConfig);
 }
 
@@ -925,9 +926,9 @@ void FootManager::updateFootTraj()
         const size_t joint_index = std::find(rjo.cbegin(), rjo.cend(), frontal_arch_joint_name) - rjo.cbegin();
         const double encoder = 0. + ctl.robot().encoderValues()[joint_index];
         const double default_encoder = ctl.robot().encoderValues()[joint_index];
-        
+
         double height_variation = -(b * std::cos(encoder + beta - ankle_pitch) - a * std::cos(alpha));
-        
+
         if (phalanxes_altitude_[current_support_foot].size() > 8)
         {
           const auto & pa = phalanxes_altitude_[current_support_foot];
@@ -941,7 +942,7 @@ void FootManager::updateFootTraj()
           }
         }
         // mc_rtc::log::error("Height estimation for supporting foot {} -> {}", frontal_arch_joint_name, height_variation);
-        
+
         return height_variation;
       };
 
@@ -967,6 +968,8 @@ void FootManager::updateFootTraj()
       // Update target
       if(!(config_.keepPoseForTouchDownFoot && touchDown_))
       {
+        std::cout << "reset after touchdown" << std::endl;
+        std::cout << "swingFootstep_->transitEndTime " << swingFootstep_->transitEndTime << std::endl;
         // targetFootPoses_.at(swingFootstep_->foot) = swingTraj_->endPose_;
 
         // WARN/TODO: A bit ugly, it is to change the pose of the foot used for the computation of the vertex for the surface
@@ -981,30 +984,32 @@ void FootManager::updateFootTraj()
 
       footTaskGains_.at(swingFootstep_->foot) = config_.footTaskGain;
 
+      const auto & targetFootPose = targetFootPoses_.at(swingFootstep_->foot);
+      double z = 0.;
+      // if(targetFootPose.translation().z() > 0.02)
+      // {
+      //   z = targetFootPose.translation().z() * 0.5;
+      // }
+      const sva::PTransformd X_0_P = sva::PTransformd(Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), z));
+
+      // Set afterLandingFootPoseFuncs_
+      {
+        auto landingFootPoseFunc = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>();
+        landingFootPoseFunc->appendPoint(std::make_pair(ctl().t(), targetFootPoses_.at(swingFootstep_->foot)));
+        landingFootPoseFunc->appendPoint(
+            std::make_pair(ctl().t() + 0.2, X_0_P));
+        landingFootPoseFunc->calcCoeff();
+        afterLandingFootPoseFuncs_.at(swingFootstep_->foot) = landingFootPoseFunc;
+      }
+
       // Set trajStartFootPoseFuncs_
       {
         auto trajStartFootPoseFunc = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>();
         trajStartFootPoseFunc->appendPoint(std::make_pair(ctl().t(), swingTraj_->endPose_));
         trajStartFootPoseFunc->appendPoint(
-            std::make_pair(swingFootstep_->transitEndTime, targetFootPoses_.at(swingFootstep_->foot)));
+            std::make_pair(swingFootstep_->transitEndTime, X_0_P));
         trajStartFootPoseFunc->calcCoeff();
         trajStartFootPoseFuncs_.at(swingFootstep_->foot) = trajStartFootPoseFunc;
-      }
-
-      // Set afterLandingFootPoseFuncs_
-      {
-        const auto & targetFootPose = targetFootPoses_.at(swingFootstep_->foot);
-        auto landingFootPoseFunc = std::make_shared<TrajColl::CubicInterpolator<sva::PTransformd, sva::MotionVecd>>();
-        landingFootPoseFunc->appendPoint(std::make_pair(ctl().t(), targetFootPoses_.at(swingFootstep_->foot)));
-        double z = 0.;
-        if(targetFootPose.translation().z() > 0.02)
-        {
-          z = targetFootPose.translation().z() * 0.5;
-        }
-        landingFootPoseFunc->appendPoint(
-            std::make_pair(ctl().t() + 0.25, sva::PTransformd(Eigen::Vector3d(targetFootPose.translation().x(), targetFootPose.translation().y(), z))));
-        landingFootPoseFunc->calcCoeff();
-        afterLandingFootPoseFuncs_.at(swingFootstep_->foot) = landingFootPoseFunc;
       }
 
       // Set supportPhase_
@@ -1028,7 +1033,7 @@ void FootManager::updateFootTraj()
   for(auto & afterLandingFootPoseFuncKV : afterLandingFootPoseFuncs_)
   {
     auto & afterLandingFootPoseFunc = afterLandingFootPoseFuncKV.second;
-    if(!trajStartFootPoseFuncs_.at(afterLandingFootPoseFuncKV.first))
+    // if(!trajStartFootPoseFuncs_.at(afterLandingFootPoseFuncKV.first))
     {
       if(!afterLandingFootPoseFunc)
       {
@@ -1165,16 +1170,20 @@ void FootManager::updateZmpTraj()
   // Update trajStartFootPoses_
   for(auto & trajStartFootPoseFuncKV : trajStartFootPoseFuncs_)
   {
-    auto & trajStartFootPoseFunc = trajStartFootPoseFuncKV.second;
-    if(!trajStartFootPoseFunc)
+    // if(!afterLandingFootPoseFuncs_.at(trajStartFootPoseFuncKV.first))
     {
-      continue;
-    }
-    trajStartFootPoses_.at(trajStartFootPoseFuncKV.first) =
-        (*trajStartFootPoseFunc)(std::min(ctl().t(), trajStartFootPoseFunc->endTime()));
-    if(trajStartFootPoseFunc->endTime() <= ctl().t())
-    {
-      trajStartFootPoseFunc.reset();
+      auto & trajStartFootPoseFunc = trajStartFootPoseFuncKV.second;
+      if(!trajStartFootPoseFunc)
+      {
+        continue;
+      }
+      std::cout << "Transition for " << (trajStartFootPoseFuncKV.first == Foot::Left ? "Left" : "Right") << std::endl;
+      trajStartFootPoses_.at(trajStartFootPoseFuncKV.first) =
+          (*trajStartFootPoseFunc)(std::min(ctl().t(), trajStartFootPoseFunc->endTime()));
+      if(trajStartFootPoseFunc->endTime() <= ctl().t())
+      {
+        trajStartFootPoseFunc.reset();
+      }
     }
   }
   std::unordered_map<Foot, sva::PTransformd> footPoses = trajStartFootPoses_;
@@ -1249,7 +1258,7 @@ void FootManager::updateVelMode()
   footstepQueue_.erase(footstepQueue_.begin() + 1, footstepQueue_.end());
   const auto & nextFootstep = footstepQueue_.front();
   sva::PTransformd footMidpose = projGround(config_.midToFootTranss.at(nextFootstep.foot).inv() * nextFootstep.pose);
-  Eigen::Vector3d deltaTrans = config_.footstepDuration * velModeData_.targetVel_;
+  Eigen::Vector3d deltaTrans = (config_.footstepDuration - 0.2) * velModeData_.targetVel_;
 
   // Update footstep online during swing
   if(velModeData_.config_.enableOnlineFootstepUpdate && swingTraj_ && swingTraj_->type() == "VariableTaskGain")
