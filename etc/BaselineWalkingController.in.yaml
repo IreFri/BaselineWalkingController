@@ -16,6 +16,10 @@ StatesFiles:
   - "@STATES_INSTALL_PREFIX@/@PROJECT_NAME@/states/data"
 # If true, state factory will be more verbose
 VerboseStateFactory: false
+<<<<<<< Updated upstream
+=======
+# Additional robots to load
+>>>>>>> Stashed changes
 # General constraints, always on
 constraints:
   - type: contact
@@ -58,6 +62,12 @@ ObserverPipelines:
   observers:
     - type: Encoder
     - type: Attitude
+<<<<<<< Updated upstream
+=======
+      config:
+        KalmanFilter:
+          gyr_cov: 1e-6 # default is 1e-10
+>>>>>>> Stashed changes
     - type: KinematicInertial
       config:
         anchorFrame:
@@ -97,13 +107,13 @@ FootManager:
   deltaTransLimit: [0.15, 0.1, 12.5] # (x [m], y [m], theta [deg])
   midToFootTranss:
     Left:
-      translation: [0, 0.105, 0] # [m]
+      translation: [0, 0.105, 0] # [m] 
     Right:
-      translation: [0, -0.105, 0] # [m]
+      translation: [0, -0.105, 0] # [m] 
   footTaskGain:
     stiffness: 1000.0
   zmpHorizon: 2.0 # [sec]
-  zmpOffset: [0, -0.02, 0] # (positive for x-forward, y-outside, z-upward) [m]
+  zmpOffset: [0, -0.02, 0] # (positive for x-forward, y-outside, z-upward) [m] 
   defaultSwingTrajType: IndHorizontalVertical
   overwriteLandingPose: false
   stopSwingTrajForTouchDownFoot: true
@@ -113,7 +123,7 @@ FootManager:
   fricCoeff: 0.5
   touchDownRemainingDuration: 0.2 # [sec]
   touchDownPosError: 0.02 # [m]
-  touchDownForceZ: 100 # [N]
+  touchDownForceZ: 100 # [N] 
   impedanceGains:
     SingleSupport:
       damper:
@@ -310,3 +320,135 @@ robots:
         Right:
           R_SHOULDER_P: [0.06981317007977318] # 4
           L_SHOULDER_P: [-0.13962634015954636] # -8
+
+
+  nao:
+    PostureTask:
+      jointWeights:
+        HeadYaw: 10
+        HeadPitch: 10
+      # For arm swing
+      jointGains:
+        - jointName: RShoulderPitch
+          stiffness: 400
+        - jointName: LShoulderPitch
+          stiffness: 400
+
+    CoMTask:
+      activeJoints: [
+      "Root",
+      "RHipPitch","RHipRoll","RHipYawPitch", "RKneePitch", "RAnklePitch", "RAnkleRoll",
+      "LHipPitch","LHipRoll","LHipYawPitch", "LKneePitch", "LAnklePitch", "LAnkleRoll"]
+
+    BaseOrientationTask:
+      frame: torso
+
+    FootManager:
+      name: FootManager
+      footstepDuration: 0.8 # [sec] 0.8
+      doubleSupportRatio: 0.125 # [] 0.125 NAO
+      deltaTransLimit: [0.05, 0.035, 5.0] # (x [m], y [m], theta [deg])  NAO [0.15, 0.1, 12.5] step lenght etc...
+      midToFootTranss:
+        Left:
+          translation: [0, 0.055, 0] # [m] NAO [0, 0.105, 0]
+        Right:
+          translation: [0, -0.055, 0] # [m] NAO [0, -0.105, 0]
+      footTaskGain:
+        stiffness: 1000 # 1000.0
+      zmpHorizon: 2.0 # [sec]
+      zmpOffset: [0, 0, 0] # (positive for x-forward, y-outside, z-upward) [m] NAO [0, -0.02, 0]
+      defaultSwingTrajType: CubicSplineSimple # IndHorizontalVertical
+      overwriteLandingPose: false
+      stopSwingTrajForTouchDownFoot: true
+      keepPoseForTouchDownFoot: false
+      enableWrenchDistForTouchDownFoot: true
+      enableArmSwing: false
+      fricCoeff: 0.5 # 0.5
+      touchDownRemainingDuration: 0.2 # [sec]
+      touchDownPosError: 0.01 # [m] 0.02
+      touchDownForceZ: 10 # [N] NAO 100
+      impedanceGains:
+        SingleSupport:
+          damper:
+            linear: [300, 300, 300]
+            angular: [100, 100, 100]
+          spring:
+            linear: [2250, 2250, 2250] # NAO changed
+            angular: [10, 10, 2000] # [0, 0, 2000]
+          wrench:
+            linear: [0, 0, 0]
+            angular: [1, 1, 0]
+        DoubleSupport:
+          damper:
+            linear: [300, 300, 1e8] # NAO changed 1e8
+            angular: [100, 100, 100]
+          spring:
+            linear: [2250, 2250, 0]
+            angular: [10, 10, 2000] # [0, 0, 2000]
+          wrench:
+            linear: [0, 0, 1]
+            angular: [1, 1, 0]
+        Swing:
+          damper:
+            linear: [300, 300, 300]
+            angular: [40, 40, 40]
+          spring:
+            linear: [2250, 2250, 2250]
+            angular: [400, 400, 400]
+          wrench:
+            linear: [0, 0, 0]
+            angular: [0, 0, 0]
+      VelMode:
+        footstepQueueSize: 3
+        enableOnlineFootstepUpdate: true
+      SwingTraj:
+        CubicSplineSimple:
+          withdrawDurationRatio: 0.25
+          withdrawOffset: [0, 0, 0.015] # [m]
+          approachDurationRatio: 0.25
+          approachOffset: [0, 0, 0.015] # [m]
+          swingOffset: [0, 0, 0.025] # [m]
+        IndHorizontalVertical:
+          withdrawDurationRatio: 0.25
+          approachDurationRatio: 0.25
+          verticalTopDurationRatio: 0.5
+          verticalTopOffset: [0, 0, 0.05] # [m]
+          tiltAngleWithdraw: 20 # [deg]
+          tiltAngleApproach: 10 # [deg]
+          tiltAngleWithdrawDurationRatio: 0.25
+          tiltAngleApproachDurationRatio: 0.25
+          tiltCenterWithdrawDurationRatio: 0.25
+          tiltCent,erApproachDurationRatio: 0.25
+          tiltDistThre: 0.2 # [m]
+          tiltForwardAngleThre: 10 # [deg]
+        VariableTaskGain:
+          withdrawDurationRatio: 0.25
+          approachDurationRatio: 0.25
+          verticalTopDurationRatio: 0.5
+          verticalTopOffset: [0, 0, 0.05] # [m]
+        LandingSearch:
+          withdrawDurationRatio: 0.2
+          withdrawOffset: [0, 0, 0.04] # [m]
+          preApproachDurationRatio: 0.25
+          approachDurationRatio: 0.2
+          approachOffset: [0, 0, 0.04] # [m]
+
+    CentroidalManager:
+      name: CentroidalManager
+      useActualStateForMpc: false
+      enableZmpFeedback: true
+      enableComZFeedback: true
+      dcmGainP: 2.0 # It must be greater than 1 to be stable
+      zmpVelGain: 0.02
+      comZGainP: 2000.0
+      comZGainD: 500.0
+      refComZ: 0.270425  # [m] NAO 0.825
+      useTargetPoseForControlRobotAnchorFrame: true
+      useActualComForWrenchDist: false
+      # actualComOffset: [0.0, 0.0, 0.0]
+      wrenchDistConfig:
+        wrenchWeight:
+          linear: [1.0, 1.0, 1.0]
+          angular: [1.0, 1.0, 1.0]
+        regularWeight: 1e-8 # 1e-8
+        ridgeForceMinMax: [0.3, 1000] # [N] changed for nao
