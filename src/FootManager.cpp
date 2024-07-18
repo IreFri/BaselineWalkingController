@@ -19,6 +19,7 @@
 #include <BaselineWalkingController/MathUtils.h>
 #include <BaselineWalkingController/swing/SwingTrajCubicSplineSimple.h>
 #include <BaselineWalkingController/swing/SwingTrajIndHorizontalVertical.h>
+#include <BaselineWalkingController/swing/SwingTrajLandingSearch.h>
 #include <BaselineWalkingController/swing/SwingTrajVariableTaskGain.h>
 
 using namespace BWC;
@@ -109,6 +110,7 @@ FootManager::FootManager(BaselineWalkingController * ctlPtr, const mc_rtc::Confi
     SwingTrajIndHorizontalVertical::loadDefaultConfig(
         mcRtcConfig("SwingTraj")("IndHorizontalVertical", mc_rtc::Configuration{}));
     SwingTrajVariableTaskGain::loadDefaultConfig(mcRtcConfig("SwingTraj")("VariableTaskGain", mc_rtc::Configuration{}));
+    SwingTrajLandingSearch::loadDefaultConfig(mcRtcConfig("SwingTraj")("LandingSearch", mc_rtc::Configuration{}));
   }
 }
 
@@ -119,6 +121,11 @@ void FootManager::reset()
   footstepQueue_.clear();
   prevFootstep_.reset();
 
+  targetFootPoses_.clear();
+  targetFootVels_.clear();
+  targetFootAccels_.clear();
+  footTaskGains_.clear();
+  trajStartFootPoseFuncs_.clear();
   for(const auto & foot : Feet::Both)
   {
     targetFootPoses_.emplace(foot, ctl().robot().surfacePose(surfaceName(foot)));
@@ -230,7 +237,7 @@ void FootManager::addToGUI(mc_rtc::gui::StateBuilder & gui)
           "zmpOffset", {"x", "y", "z"}, [this]() -> const Eigen::Vector3d & { return config_.zmpOffset; },
           [this](const Eigen::Vector3d & v) { config_.zmpOffset = v; }),
       mc_rtc::gui::ComboInput(
-          "defaultSwingTrajType", {"CubicSplineSimple", "IndHorizontalVertical", "VariableTaskGain"},
+          "defaultSwingTrajType", {"CubicSplineSimple", "IndHorizontalVertical", "VariableTaskGain", "LandingSearch"},
           [this]() { return config_.defaultSwingTrajType; },
           [this](const std::string & v) { config_.defaultSwingTrajType = v; }),
       mc_rtc::gui::Checkbox(
@@ -321,6 +328,7 @@ void FootManager::addToGUI(mc_rtc::gui::StateBuilder & gui)
   SwingTrajCubicSplineSimple::addConfigToGUI(gui, {ctl().name(), "SwingTraj", "CubicSplineSimple"});
   SwingTrajIndHorizontalVertical::addConfigToGUI(gui, {ctl().name(), "SwingTraj", "IndHorizontalVertical"});
   SwingTrajVariableTaskGain::addConfigToGUI(gui, {ctl().name(), "SwingTraj", "VariableTaskGain"});
+  SwingTrajLandingSearch::addConfigToGUI(gui, {ctl().name(), "SwingTraj", "LandingSearch"});
 }
 
 void FootManager::removeFromGUI(mc_rtc::gui::StateBuilder & gui)
@@ -330,6 +338,7 @@ void FootManager::removeFromGUI(mc_rtc::gui::StateBuilder & gui)
   SwingTrajCubicSplineSimple::removeConfigFromGUI(gui, {ctl().name(), "SwingTraj", "CubicSplineSimple"});
   SwingTrajIndHorizontalVertical::removeConfigFromGUI(gui, {ctl().name(), "SwingTraj", "IndHorizontalVertical"});
   SwingTrajVariableTaskGain::removeConfigFromGUI(gui, {ctl().name(), "SwingTraj", "VariableTaskGain"});
+  SwingTrajLandingSearch::removeConfigFromGUI(gui, {ctl().name(), "SwingTraj", "LandingSearch"});
 }
 
 void FootManager::addToLogger(mc_rtc::Logger & logger)
@@ -428,6 +437,26 @@ bool FootManager::appendFootstep(const Footstep & newFootstep)
   footstepQueue_.push_back(newFootstep);
 
   return true;
+}
+
+void FootManager::clearFootstepQueue()
+{
+  if(footstepQueue_.empty())
+  {
+    return;
+  }
+
+  if(swingFootstep_ == &(footstepQueue_.front()))
+  {
+    if(footstepQueue_.size() >= 2)
+    {
+      footstepQueue_.erase(footstepQueue_.begin() + 1, footstepQueue_.end());
+    }
+  }
+  else
+  {
+    footstepQueue_.clear();
+  }
 }
 
 Eigen::Vector3d FootManager::clampDeltaTrans(const Eigen::Vector3d & deltaTrans, const Foot & foot)
@@ -583,7 +612,9 @@ Eigen::Vector3d FootManager::calcZmpWithOffset(const std::unordered_map<Foot, sv
   }
 }
 
-bool FootManager::walkToRelativePose(const Eigen::Vector3d & targetTrans, int lastFootstepNum)
+bool FootManager::walkToRelativePose(const Eigen::Vector3d & targetTrans,
+                                     int lastFootstepNum,
+                                     const std::vector<Eigen::Vector3d> & waypointTransList)
 {
   if(footstepQueue_.size() > 0)
   {
@@ -604,22 +635,28 @@ bool FootManager::walkToRelativePose(const Eigen::Vector3d & targetTrans, int la
   // transformation in the world frame.
   const sva::PTransformd & initialFootMidpose =
       projGround(sva::interpolate(targetFootPoses_.at(Foot::Left), targetFootPoses_.at(Foot::Right), 0.5));
-  const sva::PTransformd & goalFootMidpose = convertTo3d(targetTrans) * initialFootMidpose;
 
-  Foot foot = targetTrans.y() >= 0 ? Foot::Left : Foot::Right;
+  Foot foot = (waypointTransList.empty() ? targetTrans.y() : waypointTransList[0].y()) >= 0 ? Foot::Left : Foot::Right;
   sva::PTransformd footMidpose = initialFootMidpose;
   double startTime = ctl().t() + 1.0;
 
-  while(convertTo2d(goalFootMidpose * footMidpose.inv()).norm() > 1e-6)
+  for(size_t i = 0; i < waypointTransList.size() + 1; i++)
   {
-    Eigen::Vector3d deltaTrans = convertTo2d(goalFootMidpose * footMidpose.inv());
-    footMidpose = convertTo3d(clampDeltaTrans(deltaTrans, foot)) * footMidpose;
+    const Eigen::Vector3d & goalTrans = (i == waypointTransList.size() ? targetTrans : waypointTransList[i]);
+    const sva::PTransformd & goalFootMidpose = convertTo3d(goalTrans) * initialFootMidpose;
+    double thre = (i == waypointTransList.size() ? 1e-6 : 1e-2);
 
-    const auto & footstep = makeFootstep(foot, footMidpose, startTime);
-    appendFootstep(footstep);
+    while(convertTo2d(goalFootMidpose * footMidpose.inv()).norm() > thre)
+    {
+      Eigen::Vector3d deltaTrans = convertTo2d(goalFootMidpose * footMidpose.inv());
+      footMidpose = convertTo3d(clampDeltaTrans(deltaTrans, foot)) * footMidpose;
 
-    foot = opposite(foot);
-    startTime = footstep.transitEndTime;
+      const auto & footstep = makeFootstep(foot, footMidpose, startTime);
+      appendFootstep(footstep);
+
+      foot = opposite(foot);
+      startTime = footstep.transitEndTime;
+    }
   }
 
   for(int i = 0; i < lastFootstepNum + 1; i++)
@@ -714,6 +751,9 @@ void FootManager::updateFootTraj()
       {
         mc_rtc::log::error_and_throw("[FootManager] Swing footstep is not consistent.");
       }
+
+      // Synchronize with end pose changes in swing trajectory
+      swingFootstep_->pose = swingTraj_->endPose_;
     }
     else
     {
@@ -744,16 +784,22 @@ void FootManager::updateFootTraj()
         }
         else if(swingTrajType == "IndHorizontalVertical")
         {
+          swingFootstep_->swingTrajConfig.add(
+              "localVertexList", calcSurfaceVertexList(ctl().robot().surface(surfaceName(swingFootstep_->foot)),
+                                                       sva::PTransformd::Identity()));
           swingTraj_ = std::make_shared<SwingTrajIndHorizontalVertical>(
               swingStartPose, swingEndPose, swingFootstep_->swingStartTime, swingFootstep_->swingEndTime,
-              config_.footTaskGain,
-              calcSurfaceVertexList(ctl().robot().surface(surfaceName(swingFootstep_->foot)),
-                                    sva::PTransformd::Identity()),
-              swingFootstep_->swingTrajConfig);
+              config_.footTaskGain, swingFootstep_->swingTrajConfig);
         }
         else if(swingTrajType == "VariableTaskGain")
         {
           swingTraj_ = std::make_shared<SwingTrajVariableTaskGain>(
+              swingStartPose, swingEndPose, swingFootstep_->swingStartTime, swingFootstep_->swingEndTime,
+              config_.footTaskGain, swingFootstep_->swingTrajConfig);
+        }
+        else if(swingTrajType == "LandingSearch")
+        {
+          swingTraj_ = std::make_shared<SwingTrajLandingSearch>(
               swingStartPose, swingEndPose, swingFootstep_->swingStartTime, swingFootstep_->swingEndTime,
               config_.footTaskGain, swingFootstep_->swingTrajConfig);
         }
@@ -864,6 +910,7 @@ void FootManager::updateFootTraj()
 
     // Update target
     {
+      swingTraj_->update(ctl().t());
       targetFootPoses_.at(swingFootstep_->foot) = swingTraj_->pose(ctl().t());
       targetFootVels_.at(swingFootstep_->foot) = swingTraj_->vel(ctl().t());
       targetFootAccels_.at(swingFootstep_->foot) = swingTraj_->accel(ctl().t());
@@ -879,9 +926,9 @@ void FootManager::updateFootTraj()
       if(!(config_.keepPoseForTouchDownFoot && touchDown_))
       {
         targetFootPoses_.at(swingFootstep_->foot) = swingTraj_->endPose_;
-        targetFootVels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
-        targetFootAccels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
       }
+      targetFootVels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
+      targetFootAccels_.at(swingFootstep_->foot) = sva::MotionVecd::Zero();
 
       footTaskGains_.at(swingFootstep_->foot) = config_.footTaskGain;
 
@@ -1138,7 +1185,6 @@ void FootManager::updateVelMode()
       Eigen::Vector3d footstepTransMin = -1 * footstepTransMax;
       sva::PTransformd footstepPoseNewClamped =
           convertTo3d(mc_filter::utils::clamp(footstepTrans, footstepTransMin, footstepTransMax)) * footstepPoseOrig;
-      footstepQueue_.front().pose = footstepPoseNewClamped;
       swingTraj_->endPose_ = footstepPoseNewClamped;
     }
   }

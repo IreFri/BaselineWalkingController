@@ -16,10 +16,6 @@ StatesFiles:
   - "@STATES_INSTALL_PREFIX@/@PROJECT_NAME@/states/data"
 # If true, state factory will be more verbose
 VerboseStateFactory: false
-# Additional robots to load
-robots:
-  ground:
-    module: env/ground
 # General constraints, always on
 constraints:
   - type: contact
@@ -62,9 +58,6 @@ ObserverPipelines:
   observers:
     - type: Encoder
     - type: Attitude
-      config:
-        KalmanFilter:
-          gyr_cov: 1e-6
     - type: KinematicInertial
       config:
         anchorFrame:
@@ -180,6 +173,12 @@ FootManager:
       approachDurationRatio: 0.25
       verticalTopDurationRatio: 0.5
       verticalTopOffset: [0, 0, 0.05] # [m]
+    LandingSearch:
+      withdrawDurationRatio: 0.2
+      withdrawOffset: [0, 0, 0.04] # [m]
+      preApproachDurationRatio: 0.25
+      approachDurationRatio: 0.2
+      approachOffset: [0, 0, 0.04] # [m]
 
 CentroidalManager:
   name: CentroidalManager
@@ -193,17 +192,28 @@ CentroidalManager:
   refComZ: 0.825 # [m]
   useTargetPoseForControlRobotAnchorFrame: true
   useActualComForWrenchDist: false
+  actualComOffset: [0.0, 0.0, 0.0]
   wrenchDistConfig:
     wrenchWeight:
       linear: [1.0, 1.0, 1.0]
       angular: [1.0, 1.0, 1.0]
     regularWeight: 1e-8
     ridgeForceMinMax: [3, 1000] # [N]
+  dcmEstimator:
+    enableDcmEstimator: false
+    dcmCorrectionMode: Bias # "Bias", "Filter", or "None"
+    biasDriftPerSecondStd: 0.002
+    dcmMeasureErrorStd: 0.01
+    zmpMeasureErrorStd: 0.005
+    biasLimit: [0.03, 0.03]
+    initDcmUncertainty: [0.01, 0.01]
+    initBiasUncertainty: [0.01, 0.01]
 
   # PreviewControlZmp
   method: PreviewControlZmp
   horizonDuration: 2.0 # [sec]
   horizonDt: 0.005 # [sec]
+  reinitForRefComZ: true
 
   # # DdpZmp
   # method: DdpZmp
@@ -213,11 +223,13 @@ CentroidalManager:
 
   # # FootGuidedControl
   # method: FootGuidedControl
+  # reinitForRefComZ: true
 
   # # IntrinsicallyStableMpc
   # method: IntrinsicallyStableMpc
   # horizonDuration: 2.0 # [sec]
   # horizonDt: 0.02 # [sec]
+  # reinitForRefComZ: true
 
 
 # OverwriteConfigKeys: [NoSensors]
@@ -257,6 +269,17 @@ OverwriteConfigList:
             linear: [0, 0, 0]
             angular: [0, 0, 0]
 
+    CentroidalManager:
+      useActualStateForMpc: false
+      enableZmpFeedback: false
+      useActualComForWrenchDist: false
+
+robots:
+  # Environment models
+  ground:
+    module: env/ground
+
+  # Robot-specific configurations
   jvrc1:
     PostureTask:
       jointWeights:
@@ -287,125 +310,3 @@ OverwriteConfigList:
         Right:
           R_SHOULDER_P: [0.06981317007977318] # 4
           L_SHOULDER_P: [-0.13962634015954636] # -8
-
-  hrp5_p:
-    PostureTask:
-      jointWeights:
-        WP: 50
-        WR: 50
-      # For arm swing
-      jointGains:
-        - jointName: RSP
-          stiffness: 400
-        - jointName: LSP
-          stiffness: 400
-
-    CoMTask:
-      activeJoints: [
-      "Root",
-      "LCY", "LCR", "LCP", "LKP", "LAP", "LAR",
-      "RCY", "RCR", "RCP", "RKP", "RAP", "RAR"]
-
-    BaseOrientationTask:
-      frame: Chest_Link2
-
-    FootManager:
-      footstepDuration: 0.9 # [sec]
-      doubleSupportRatio: 0.15 # []
-      impedanceGains:
-        SingleSupport:
-          spring:
-            linear: [2250, 2250, 450] # Weaken Z-component spring to avoid a too fast recovery for mass errors
-      jointAnglesForArmSwing:
-        Left:
-          RSP: [0.9599310885968813] # 55
-          LSP: [1.1344640137963142] # 65
-        Right:
-          RSP: [1.1344640137963142] # 65
-          LSP: [0.9599310885968813] # 55
-
-    CentroidalManager:
-      dcmGainP: 2.0 # It must be greater than 1 to be stable
-      comZGainP: 20000.0
-      refComZ: 0.95 # [m]
-      method: PreviewControlZmp
-      horizonDuration: 2.0 # [sec]
-      horizonDt: 0.002 # [sec]
-
-  hrp2_drc:
-    PostureTask:
-      jointWeights:
-        CHEST_JOINT1: 50
-      # For arm swing
-      jointGains:
-        - jointName: RARM_JOINT0
-          stiffness: 400
-        - jointName: LARM_JOINT0
-          stiffness: 400
-
-    CoMTask:
-      activeJoints: [
-      "Root",
-      "RLEG_JOINT0", "RLEG_JOINT1", "RLEG_JOINT2", "RLEG_JOINT3", "RLEG_JOINT4", "RLEG_JOINT5",
-      "LLEG_JOINT0", "LLEG_JOINT1", "LLEG_JOINT2", "LLEG_JOINT3", "LLEG_JOINT4", "LLEG_JOINT5"]
-
-    BaseOrientationTask:
-      frame: CHEST_LINK1
-
-    FootManager:
-      footstepDuration: 0.9 # [sec]
-      doubleSupportRatio: 0.15 # []
-      zmpOffset: [0, -0.03, 0] # (positive for x-forward, y-outside, z-upward) [m]
-      jointAnglesForArmSwing:
-        Left:
-          RARM_JOINT0: [0.6108652381980153] # 35
-          LARM_JOINT0: [0.7853981633974483] # 45
-        Right:
-          RARM_JOINT0: [0.7853981633974483] # 45
-          LARM_JOINT0: [0.6108652381980153] # 35
-
-    CentroidalManager:
-      dcmGainP: 2.0 # It must be greater than 1 to be stable
-      refComZ: 0.87 # [m]
-      method: PreviewControlZmp
-      horizonDuration: 2.0 # [sec]
-      horizonDt: 0.005 # [sec]
-
-
-  HRP4CR_soft:
-    PostureTask:
-      jointWeights:
-        WAIST_R: 10
-        WAIST_P: 10
-      # For arm swing
-      jointGains:
-        - jointName: R_SHOULDER_P
-          stiffness: 400
-        - jointName: L_SHOULDER_P
-          stiffness: 400
-
-    CoMTask:
-      activeJoints: [
-      "Root","R_HIP_Y","R_HIP_R","R_HIP_P", "R_KNEE_P",
-      "R_ANKLE_P", "R_ANKLE_R", "L_HIP_Y",  "L_HIP_R", "L_HIP_P",
-      "L_KNEE_P",  "L_ANKLE_P", "L_ANKLE_R"]
-
-    BaseOrientationTask:
-      frame: CHEST_P_LINK
-
-    FootManager:
-      enableArmSwing: true
-      jointAnglesForArmSwing:
-        Left:
-          R_SHOULDER_P: [-0.13962634015954636] # -8
-          L_SHOULDER_P: [0.06981317007977318] # 4
-        Right:
-          R_SHOULDER_P: [0.06981317007977318] # 4
-          L_SHOULDER_P: [-0.13962634015954636] # -8
-
-    CentroidalManager:
-      refComZ: 0.76 # [m]
-
-    FootManager:
-      # defaultSwingTrajType: IndHorizontalVertical
-      defaultSwingTrajType: CubicSplineSimple

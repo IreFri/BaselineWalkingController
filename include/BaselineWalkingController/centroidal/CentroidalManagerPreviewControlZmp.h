@@ -11,7 +11,7 @@ namespace BWC
     Centroidal manager calculates the centroidal targets from the specified reference ZMP trajectory and sensor
    measurements.
 */
-class CentroidalManagerPreviewControlZmp : public CentroidalManager
+class CentroidalManagerPreviewControlZmp : virtual public CentroidalManager
 {
 public:
   /** \brief Configuration. */
@@ -22,6 +22,9 @@ public:
 
     //! Horizon dt [sec]
     double horizonDt = 0.005;
+
+    //! Whether to reinitialize MPC when reference CoM Z position is updated
+    bool reinitForRefComZ = true;
 
     /** \brief Load mc_rtc configuration. */
     virtual void load(const mc_rtc::Configuration & mcRtcConfig) override;
@@ -67,7 +70,7 @@ protected:
   }
 
   /** \brief Calculate reference data of MPC. */
-  Eigen::Vector2d calcRefData(double t) const;
+  virtual Eigen::Vector2d calcRefData(double t) const;
 
 protected:
   //! Configuration
@@ -78,5 +81,8 @@ protected:
 
   //! Whether it is the first iteration
   bool firstIter_ = true;
+
+  //! Reference CoM Z position of the previous control step
+  double lastRefComZ_ = 0;
 };
 } // namespace BWC

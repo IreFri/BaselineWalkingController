@@ -3,6 +3,10 @@
 #include <mc_rtc/gui/StateBuilder.h>
 #include <mc_rtc/log/Logger.h>
 
+#include <state-observation/dynamics-estimators/lipm-dcm-estimator.hpp>
+
+#include <TrajColl/CubicInterpolator.h>
+
 #include <BaselineWalkingController/FootTypes.h>
 
 namespace mc_rbdyn
@@ -13,7 +17,6 @@ class Robot;
 namespace ForceColl
 {
 class Contact;
-template<class PatchID>
 class WrenchDistribution;
 } // namespace ForceColl
 
@@ -29,6 +32,39 @@ class BaselineWalkingController;
 class CentroidalManager
 {
 public:
+  /** \brief Configuration for DCM estimator. */
+  struct DcmEstimatorConfiguration
+  {
+    //! Whether to enable DCM estimator
+    bool enableDcmEstimator = false;
+
+    //! DCM correction mode ("Bias", "Filter", or "None")
+    std::string dcmCorrectionMode = "Bias";
+
+    //! The standard deviation of the DCM bias drift [m/s]
+    double biasDriftPerSecondStd = stateObservation::LipmDcmEstimator::defaultBiasDriftSecond;
+
+    //! The standard deviation of the DCM estimation error, NOT including the DCM bias [m]
+    double dcmMeasureErrorStd = stateObservation::LipmDcmEstimator::defaultDcmErrorStd;
+
+    //! The standard deviaiton of the ZMP estimation error [m]
+    double zmpMeasureErrorStd = stateObservation::LipmDcmEstimator::defaultZmpErrorStd;
+
+    //! The largest accepted absolute value of the DCM bias in local frame [m] (negative value for no limit)
+    Eigen::Vector2d biasLimit = Eigen::Vector2d::Constant(0.03);
+
+    //! The uncertainty in the DCM initial value [m]
+    Eigen::Vector2d initDcmUncertainty =
+        Eigen::Vector2d::Constant(stateObservation::LipmDcmEstimator::defaultDCMUncertainty);
+
+    //! The uncertainty in the DCM bias initial value [m]
+    Eigen::Vector2d initBiasUncertainty =
+        Eigen::Vector2d::Constant(stateObservation::LipmDcmEstimator::defaultBiasUncertainty);
+
+    /** \brief Load mc_rtc configuration. */
+    virtual void load(const mc_rtc::Configuration & mcRtcConfig);
+  };
+
   /** \brief Configuration. */
   struct Configuration
   {
@@ -69,10 +105,16 @@ public:
     bool useTargetPoseForControlRobotAnchorFrame = true;
 
     //! Whether to use actual CoM for wrench distribution
-    bool useActualComForWrenchDist = true;
+    bool useActualComForWrenchDist = false;
+
+    //! Actual CoM offset in world frame [m]
+    Eigen::Vector3d actualComOffset = Eigen::Vector3d::Zero();
 
     //! Configuration for wrench distribution
     mc_rtc::Configuration wrenchDistConfig;
+
+    //! Configuration for DCM estimator
+    DcmEstimatorConfiguration dcmEstimatorConfig;
 
     /** \brief Load mc_rtc configuration. */
     virtual void load(const mc_rtc::Configuration & mcRtcConfig);
@@ -118,6 +160,14 @@ public:
   /** \brief Remove entries from the logger. */
   virtual void removeFromLogger(mc_rtc::Logger & logger);
 
+  /** \brief Set reference CoM Z position.
+      \param refComZ reference CoM Z position
+      \param startTime time to start interpolation
+      \param interpDuration duration to interpolate
+      \return whether refComZ is set correctly
+  */
+  bool setRefComZ(double refComZ, double startTime, double interpDuration);
+
   /** \brief Set anchor frame. */
   void setAnchorFrame();
 
@@ -146,10 +196,22 @@ protected:
   /** \brief Whether to assume that CoM Z is constant. */
   virtual bool isConstantComZ() const = 0;
 
+  /** \brief Calculate reference CoM Z position.
+      \param t time
+      \param derivOrder derivative order (0 for original value, 1 for velocity)
+  */
+  double calcRefComZ(double t, int derivOrder = 0) const;
+
   /** \brief Calculate anchor frame.
       \param robot robot
    */
   sva::PTransformd calcAnchorFrame(const mc_rbdyn::Robot & robot) const;
+
+  /** \brief Get actual CoM. */
+  Eigen::Vector3d actualCom() const;
+
+  /** \brief Get actual unbiased CoM. */
+  Eigen::Vector3d actualComUnbiased() const;
 
   /** \brief Calculate ZMP from wrench list.
       \param wrenchList wrench list
@@ -167,6 +229,9 @@ protected:
   virtual Eigen::Vector3d calcPlannedComAccel() const;
 
 protected:
+  //! Maximum time of interpolation endpoint
+  const double interpMaxTime_ = 1e10;
+
   //! Pointer to controller
   BaselineWalkingController * ctlPtr_ = nullptr;
 
@@ -194,10 +259,25 @@ protected:
   //! Force Z with feedback control
   double controlForceZ_ = 0;
 
+  //! Measured ZMP
+  Eigen::Vector3d measuredZMP_ = Eigen::Vector3d::Zero();
+
+  //! Support region (min, max)
+  std::array<Eigen::Vector2d, 2> supportRegion_ = {Eigen::Vector2d::Zero(), Eigen::Vector2d::Zero()};
+
   //! Wrench distribution
-  std::shared_ptr<ForceColl::WrenchDistribution<Foot>> wrenchDist_;
+  std::shared_ptr<ForceColl::WrenchDistribution> wrenchDist_;
 
   //! Contact list
   std::unordered_map<Foot, std::shared_ptr<ForceColl::Contact>> contactList_;
+
+  //! Interpolation function of reference CoM Z position
+  std::shared_ptr<TrajColl::CubicInterpolator<double>> refComZFunc_;
+
+  //! DCM estimator
+  std::shared_ptr<stateObservation::LipmDcmEstimator> dcmEstimator_;
+
+  //! Whether to require to reset DCM estimator
+  bool requireDcmEstimatorReset_ = true;
 };
 } // namespace BWC

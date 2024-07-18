@@ -1,8 +1,7 @@
 # [BaselineWalkingController](https://github.com/isri-aist/BaselineWalkingController)
 Humanoid walking controller with various baseline methods
 
-[![CI](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci-standalone.yaml/badge.svg)](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci-standalone.yaml)
-[![CI](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci-catkin.yaml/badge.svg)](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci-catkin.yaml)
+[![CI](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci.yaml/badge.svg)](https://github.com/isri-aist/BaselineWalkingController/actions/workflows/ci.yaml)
 [![Documentation](https://img.shields.io/badge/doxygen-online-brightgreen?logo=read-the-docs&style=flat)](https://isri-aist.github.io/BaselineWalkingController/)
 [![LICENSE](https://img.shields.io/github/license/isri-aist/BaselineWalkingController)](https://github.com/isri-aist/BaselineWalkingController/blob/master/LICENSE)
 [![Docker](https://img.shields.io/badge/Docker%20image-ready-blue)](https://github.com/isri-aist/BaselineWalkingController/pkgs/container/baseline_walking_controller)
@@ -15,7 +14,7 @@ https://user-images.githubusercontent.com/6636600/184788709-fcb55fa8-fd93-4be3-b
 
 ## Features
 - Completely open source! (controller framework: mc_rtc, simulator: Choreonoid, sample robot model: JVRC1)
-- Full capabilities, including 3D walking and integration with a footstep planner.
+- Full capabilities, including 3D walking, mass property error compensation of robot model, and integration with a footstep planner.
 - Easy to switch between various methods of centroidal trajectory generation for walking implemented in [CentroidalControlCollection](https://github.com/isri-aist/CentroidalControlCollection).
 - Easy to switch between the two frameworks for centroidal trajectory generation for walking: (1) closed-loop MPC and (2) open-loop MPC + stabilizer.
 - Support for a virtual robot whose model is publicly available so you can try out the controller right away.
@@ -33,6 +32,9 @@ $ echo \
 $ sudo apt-get update
 $ sudo apt-get install docker-ce docker-ce-cli containerd.io docker-compose-plugin
 ```
+
+To enable GPUs in Docker (i.e., enable the `--gpus` option in the `docker` command), install `nvidia-docker2`.
+See [here](https://www.ibm.com/docs/en/maximo-vi/continuous-delivery?topic=planning-installing-docker-nvidia-docker2) for details.
 
 2. By executing the following commands, the window of the dynamics simulator Choreonoid will open and the robot will walk.
 Close the Choreonoid window to exit.
@@ -73,6 +75,7 @@ This controller is a simple combination of the following existing typical elemen
 
 For more information on the technical details, please see the following papers:
 - Papers listed in [CentroidalControlCollection](https://github.com/isri-aist/CentroidalControlCollection)
+- Papers listed in [ForceControlCollection](https://github.com/isri-aist/ForceControlCollection)
 - S Kajita, et al. Biped walking stabilization based on linear inverted pendulum tracking. IROS, 2010.
 - S Caron, et al. Stair climbing stabilization of the HRP-4 humanoid robot using whole-body admittance control. ICRA, 2019.
 
@@ -158,3 +161,11 @@ $ choreonoid sim_mc.cnoid --start-simulation
 $ source ~/ros/ws_bwc/devel/setup.bash
 $ roslaunch baseline_walking_controller display.launch
 ```
+
+## Documents
+[BaselineWalkingController Tips](https://www.dropbox.com/scl/fi/vpn4hvbh1v037aubm4jjo/BaselineWalkingController-Tips.docx?rlkey=4t7fvb45tmvmlb23awb3ke5eo&st=fryrxj6w&dl=0): a collection of tips for BaselineWalkingController users
+
+## Controllers for motions beyond walking
+The following controllers are based on or developed with the same philosophy as BaselineWalkingController.
+- Loco-manipulation: [LocomanipController](https://github.com/isri-aist/LocomanipController)
+- Multi-contact motion: [MultiContactController](https://github.com/isri-aist/MultiContactController)

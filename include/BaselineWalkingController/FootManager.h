@@ -217,6 +217,9 @@ public:
   */
   bool appendFootstep(const Footstep & newFootstep);
 
+  /** \brief Clear footstep queue (with retaining footstep during swing). */
+  void clearFootstepQueue();
+
   /** \brief Calculate reference ZMP.
       \param t time
       \param derivOrder derivative order (0 for original value, 1 for velocity)
@@ -316,9 +319,12 @@ public:
   /** \brief Send footstep sequence to walk to the relative target pose.
       \param targetTrans relative target pose of foot midpose (x [m], y [m], theta [rad])
       \param lastFootstepNum number of last footstep
+      \param waypointTransList waypoint pose list of foot midpose relative to current pose (x [m], y [m], theta [rad])
       \return whether footstep is successfully sent
    */
-  bool walkToRelativePose(const Eigen::Vector3d & targetTrans, int lastFootstepNum = 0);
+  bool walkToRelativePose(const Eigen::Vector3d & targetTrans,
+                          int lastFootstepNum = 0,
+                          const std::vector<Eigen::Vector3d> & waypointTransList = {});
 
   /** \brief Start velocity mode.
       \return whether it is successfully started
@@ -424,7 +430,7 @@ protected:
   std::map<double, std::unordered_map<Foot, sva::PTransformd>> contactFootPosesList_;
 
   //! Footstep during swing
-  const Footstep * swingFootstep_ = nullptr;
+  Footstep * swingFootstep_ = nullptr;
 
   //! Foot swing trajectory
   std::shared_ptr<SwingTraj> swingTraj_ = nullptr;
